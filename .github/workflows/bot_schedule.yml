@@ -19,7 +19,7 @@ jobs:
 
       - name: Installa librerie
         run: |
-          pip install ccxt pandas numpy
+          pip install yfinance pandas numpy
 
       - name: Esegui script
         run: |
