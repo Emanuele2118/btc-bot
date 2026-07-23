@@ -5,7 +5,8 @@ import numpy as np
 def run_trading_bot():
     print("--- Inizio esecuzione Bot BTC/USDT ---")
     
-    exchange = ccxt.binance({
+    # Usiamo Kraken al posto di Binance per evitare restrizioni geografiche sui server cloud
+    exchange = ccxt.kraken({
         'enableRateLimit': True,
     })
     
@@ -45,6 +46,10 @@ def run_trading_bot():
     except Exception as e:
         print(f"Errore durante l'esecuzione del bot: {e}")
         
+    print("--- Fine esecuzione ---")
+
+if __name__ == "__main__":
+    run_trading_bot()
     print("--- Fine esecuzione ---")
 
 if __name__ == "__main__":
