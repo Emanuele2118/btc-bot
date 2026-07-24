@@ -2,7 +2,8 @@ name: Bot BTC/USDT 24h
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # Esegue il bot automaticamente ogni 15 minuti, 24 ore su 24
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
