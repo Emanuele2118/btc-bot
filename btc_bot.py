@@ -66,6 +66,9 @@ def gestisci_portafoglio(azione, prezzo, quantita=0):
 def run_bot():
     print("--- Inizio esecuzione Bot con Paper Trading Interno ---")
     
+    # Messaggio di test per verificare subito la connessione Telegram
+    manda_messaggio_telegram("🤖 **Bot avviato con successo!** Connessione Telegram attiva.")
+    
     try:
         df = yf.download("BTC-USD", interval="1h", period="5d")
         if isinstance(df.columns, pd.MultiIndex):
