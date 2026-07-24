@@ -1,15 +1,15 @@
 name: Bot BTC/USDT Paper Trading 24h
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
+  repository_dispatch:
+    types: [trigger-bot]
+  workflow_dispatch: # Mantiene attivo anche il pulsante per il test manuale
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Permette al bot di salvare il file portfolio.json nel repository
+      contents: write 
     steps:
       - name: Clona repository
         uses: actions/checkout@v4
@@ -34,4 +34,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Aggiornamento automatico portafoglio virtuale [skip ci]"
-          file_pattern: portfolio.json
+          file_pattern: "portfolio.json"
