@@ -103,14 +103,16 @@ def run_bot():
             
             messaggio = (
                 f"🟢 **ACQUISTO ESEGUITO** 🟢\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Quantità:** {quantita:.5f} BTC\n"
                 f"• **Spesa:** ${spesa:,.2f}{bonus_testo}\n\n"
                 f"📊 **Perché ho comprato?**\n"
-                f"- L'EMA veloce ({ema_veloce:.1f}) è sopra l'EMA lenta ({ema_lenta:.1f}): trend rialzista.\n"
-                f"- L'RSI ({rsi_attuale:.1f}) è sotto 75 (mercato non in ipercomprato estremo).\n\n"
-                f"💰 Saldo USD: ${dati['usd']:,.2f}\n"
-                f"🪙 Saldo BTC: {dati['btc']:.5f}"
+                f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è sopra l'EMA lenta (`{ema_lenta:.1f}`): **trend rialzista**.\n"
+                f"🔹 L'RSI (`{rsi_attuale:.1f}`) è sotto 75 (mercato non in ipercomprato estremo).\n\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
+                f"🪙 **Saldo BTC:** {dati['btc']:.5f}"
             )
             
         # CONDIZIONE DI VENDITA
@@ -128,19 +130,20 @@ def run_bot():
             
             messaggio = (
                 f"🔴 **VENDITA CHIUSA** 🔴\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo uscita:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Profitto/Perdita:** {segno}${profitto_usd:,.2f} ({segno}{perc_operazione:.2f}%)\n\n"
                 f"📊 **Perché ho venduto?**\n"
-                f"- L'EMA veloce ({ema_veloce:.1f}) è scesa sotto l'EMA lenta ({ema_lenta:.1f}): inversione del trend ribassista.\n\n"
-                f"💰 Saldo USD: ${dati['usd']:,.2f}\n"
-                f"🪙 Saldo BTC: {dati['btc']}"
+                f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è scesa sotto l'EMA lenta (`{ema_lenta:.1f}`): **inversione ribassista**.\n\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
+                f"🪙 **Saldo BTC:** {dati['btc']}"
             )
             
         # NESSUN ORDINE: Spieghiamo il motivo esatto
         else:
             motivo = ""
             if dati["btc"] > 0:
-                # Abbiamo una posizione aperta, spieghiamo perché la teniamo
                 valore_btc_attuale = dati["btc"] * ultimo_prezzo
                 valore_iniziale_btc = dati["btc"] * dati["prezzo_acquisto"]
                 profitto_attuale = valore_btc_attuale - valore_iniziale_btc
@@ -154,7 +157,6 @@ def run_bot():
                     f"- EMA Veloce: {ema_veloce:.1f} | EMA Lenta: {ema_lenta:.1f}"
                 )
             else:
-                # Siamo senza Bitcoin, spieghiamo perché non compra
                 if ema_veloce <= ema_lenta:
                     motivo = f"⏳ **In attesa (Trend ribassista)**\nL'EMA veloce ({ema_veloce:.1f}) si trova sotto l'EMA lenta ({ema_lenta:.1f}). Aspetto che il trend giri al rialzo."
                 elif rsi_attuale >= 75:
@@ -163,17 +165,18 @@ def run_bot():
                     motivo = "🔍 **In attesa di condizioni ottimali**\nIl mercato sta consolidando."
 
             messaggio = (
-                f"ℹ️ **REPORT DI CONTROLLO (Nessun trade)** ℹ️\n"
+                f"🛡️ **REPORT DI CONTROLLO** 🛡️\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo BTC:** ${ultimo_prezzo:,.2f}\n"
                 f"• **RSI (15m):** {rsi_attuale:.1f}\n\n"
-                f"📝 **Motivo dello stop:**\n{motivo}"
+                f"📌 **Stato attuale:**\n{motivo}"
             )
 
         # 5. Salvataggio stato
         with open(file_path, 'w') as f:
             json.dump(dati, f)
             
-        # 6. Invio notifica Telegram (ora invia SEMPRE un report educativo)
+        # 6. Invio notifica Telegram
         if messaggio:
             manda_messaggio_telegram(messaggio)
             
