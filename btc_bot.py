@@ -1,23 +1,78 @@
 import os
-import ccxt
+import json
+import requests
 import pandas as pd
 import numpy as np
 import yfinance as yf
 
-def run_trading_bot():
-    print("--- Inizio esecuzione Bot di Trading Automatizzato ---")
+# Configurazioni Telegram
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
+def manda_messaggio_telegram(testo):
+    """Funzione per inviare notifiche su Telegram"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Credenziali Telegram non configurate.")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": testo,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Errore invio Telegram: {e}")
+
+def gestisci_portafoglio(azione, prezzo, quantita=0):
+    """Gestisce il portafoglio virtuale salvandolo in un file JSON"""
+    file_path = 'portfolio.json'
+    
+    # Valori di default se il file non esiste
+    dati = {"usd": 10000.0, "btc": 0.0}
+    
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            try:
+                dati = json.load(f)
+            except:
+                pass
+                
+    messaggio = ""
+    
+    if azione == "COMPRA" and dati["usd"] >= (prezzo * quantita):
+        spesa = prezzo * quantita
+        dati["usd"] -= spesa
+        dati["btc"] += quantita
+        messaggio = f"🟢 **ACQUISTO SIMULATO** 🟢\n- Prezzo: ${prezzo:,.2f}\n- Quantità: {quantita} BTC\n- Spesa: ${spesa:,.2f}\n\n💰 Saldo USD: ${dati['usd']:,.2f}\n🪙 Saldo BTC: {dati['btc']}"
+        
+    elif azione == "VENDI" and dati["btc"] > 0:
+        ricavo = dati["btc"] * prezzo
+        dati["usd"] += ricavo
+        quantita_venduta = dati["btc"]
+        dati["btc"] = 0.0
+        messaggio = f"🔴 **VENDITA SIMULATA** 🔴\n- Prezzo: ${prezzo:,.2f}\n- Quantità venduta: {quantita_venduta} BTC\n- Ricavo: ${ricavo:,.2f}\n\n💰 Saldo USD: ${dati['usd']:,.2f}\n🪙 Saldo BTC: {dati['btc']}"
+        
+    else:
+        messaggio = None
+        
+    # Salva il nuovo stato
+    with open(file_path, 'w') as f:
+        json.dump(dati, f)
+        
+    return messaggio
+
+def run_bot():
+    print("--- Inizio esecuzione Bot con Paper Trading Interno ---")
     
     try:
-        # 1. Scarichiamo i dati di prezzo aggiornati da Yahoo Finance per i calcoli
-        print("Scaricamento dati storici...")
         df = yf.download("BTC-USD", interval="1h", period="5d")
-        
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-            
         df = df.dropna()
         
-        # 2. Calcolo Indicatori (EMA e RSI)
+        # Indicatori
         df['ema_fast'] = df['Close'].ewm(span=20, adjust=False).mean()
         df['ema_slow'] = df['Close'].ewm(span=50, adjust=False).mean()
         
@@ -32,44 +87,34 @@ def run_trading_bot():
         ema_lenta = float(df['ema_slow'].iloc[-1])
         rsi_attuale = float(df['rsi'].iloc[-1])
         
-        print(f"Prezzo attuale BTC: ${ultimo_prezzo:.2f}")
-        print(f"EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f} | RSI: {rsi_attuale:.2f}")
+        print(f"Prezzo BTC: ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f}")
         
-        # 3. Inizializziamo la connessione all'Exchange (es. Kraken) tramite CCXT
-        # Per testare senza rischi, puoi abilitare la modalità sandbox se l'exchange la supporta
-        exchange = ccxt.kraken({
-            'apiKey': os.environ.get('EXCHANGE_API_KEY'),
-            'secret': os.environ.get('EXCHANGE_SECRET_KEY'),
-            'enableRateLimit': True,
-        })
-        
-        symbol = 'BTC/USDT' # o BTC/USD a seconda dell'exchange
-        
-        # 4. Logica delle decisioni di trading
-        if ema_veloce > ema_lenta and rsi_attuale < 70:
-            print("SEGNALE DI ACQUISTO (LONG) RILEVATO!")
-            
-            # ATTENZIONE: Decommenta le righe sotto solo quando hai configurato le chiavi API su GitHub Secrets
-            # amount_to_buy = 0.001  # Quantità di BTC da acquistare
-            # order = exchange.create_market_buy_order(symbol, amount_to_buy)
-            # print(f"Ordine di acquisto eseguito: {order}")
-            
-        elif ema_veloce < ema_lenta:
-            print("SEGNALE DI VENDITA / NEUTRO RILEVATO.")
-            
-            # ATTENZIONE: Decommenta le righe sotto per abilitare la vendita automatica
-            # balance = exchange.fetch_balance()
-            # btc_balance = balance['free'].get('BTC', 0)
-            # if btc_balance > 0.0001:
-            #     order = exchange.create_market_sell_order(symbol, btc_balance)
-            #     print(f"Ordine di vendita eseguito: {order}")
+        # Leggiamo il portafoglio attuale per vedere se abbiamo già BTC o USD
+        file_path = 'portfolio.json'
+        dati_correnti = {"usd": 10000.0, "btc": 0.0}
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                dati_correnti = json.load(f)
+                
+        # Logica di trading
+        if ema_veloce > ema_lenta and rsi_attuale < 70 and dati_correnti["usd"] > 100:
+            print("Segnale di acquisto rilevato.")
+            msg = gestisci_portafoglio("COMPRA", ultimo_prezzo, quantita=0.005)
+            if msg:
+                manda_messaggio_telegram(msg)
+                
+        elif ema_veloce < ema_lenta and dati_correnti["btc"] > 0:
+            print("Segnale di vendita rilevato.")
+            msg = gestisci_portafoglio("VENDI", ultimo_prezzo)
+            if msg:
+                manda_messaggio_telegram(msg)
         else:
-            print("Mercato in fase di indecisione. Nessuna azione eseguita.")
+            print("Nessuna azione necessaria in questo momento.")
             
     except Exception as e:
-        print(f"Errore durante l'esecuzione del bot: {e}")
+        print(f"Errore: {e}")
         
     print("--- Fine esecuzione ---")
 
 if __name__ == "__main__":
-    run_trading_bot()
+    run_bot()
