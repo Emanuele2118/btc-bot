@@ -4,12 +4,10 @@ import requests
 import pandas as pd
 import numpy as np
 
-# Configurazioni Telegram
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 def manda_messaggio_telegram(testo):
-    """Funzione per inviare notifiche su Telegram"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Credenziali Telegram non configurate.")
         return
@@ -25,28 +23,29 @@ def manda_messaggio_telegram(testo):
         print(f"Errore invio Telegram: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot Formativo (Binance Live) ---")
+    print("--- Inizio esecuzione Bot Formativo (Coinbase Live) ---")
     
     try:
-        # 1. Scarichiamo le candele storiche e live a 15 minuti direttamente da Binance
-        url_binance_klines = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=100"
-        response = requests.get(url_binance_klines, timeout=5)
+        # Scarichiamo le candele storiche a 15 minuti da Coinbase Exchange API
+        url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=900"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url_coinbase, headers=headers, timeout=10)
         
         if response.status_code == 200:
             raw_data = response.json()
-            df = pd.DataFrame(raw_data, columns=[
-                'Open_time', 'Open', 'High', 'Low', 'Close', 'Volume',
-                'Close_time', 'Quote_asset_volume', 'Number_of_trades',
-                'Taker_buy_base_asset_volume', 'Taker_buy_quote_asset_volume', 'Ignore'
-            ])
+            # Coinbase restituisce un array di array: [time, low, high, open, close, volume]
+            # Ordinati dal più recente al meno recente, quindi li invertiamo per averli cronologici
+            raw_data.reverse()
+            
+            df = pd.DataFrame(raw_data, columns=['Time', 'Low', 'High', 'Open', 'Close', 'Volume'])
             df = df[['Open', 'High', 'Low', 'Close']].astype(float)
         else:
-            print("Errore nel recupero dati da Binance.")
+            print(f"Errore nel recupero dati da Coinbase: {response.status_code}")
             return
 
-        # 2. Prezzo e Indicatori Tecnici (EMA 9 e 21, RSI, ATR) calcolati sui dati freschi
         ultimo_prezzo = float(df['Close'].iloc[-1])
         
+        # Indicatori Tecnici
         df['ema_fast'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['ema_slow'] = df['Close'].ewm(span=21, adjust=False).mean()
         
@@ -67,9 +66,9 @@ def run_bot():
         rsi_attuale = float(df['rsi'].iloc[-1])
         atr_attuale = float(df['atr'].iloc[-1])
         
-        print(f"Prezzo BTC (Binance): ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f} | EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f}")
+        print(f"Prezzo BTC (Coinbase): ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f} | EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f}")
         
-        # 3. Gestione portafoglio virtuale
+        # Gestione portafoglio virtuale
         file_path = 'portfolio.json'
         dati = {"usd": 10000.0, "btc": 0.0, "prezzo_acquisto": 0.0}
         
@@ -84,9 +83,7 @@ def run_bot():
                     
         messaggio = None
         
-        # 4. Logica di Trading
-        
-        # CONDIZIONE DI ACQUISTO
+        # Logica di Trading
         if ema_veloce > ema_lenta and rsi_attuale < 75 and dati["usd"] > 100:
             capitale_totale = dati["usd"] + (dati["btc"] * ultimo_prezzo)
             rischio_dollari = capitale_totale * 0.01 
@@ -119,13 +116,12 @@ def run_bot():
                 f"• **Spesa:** ${spesa:,.2f}{bonus_testo}\n\n"
                 f"📊 **Perché ho comprato?**\n"
                 f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è sopra l'EMA lenta (`{ema_lenta:.1f}`): **trend rialzista**.\n"
-                f"🔹 L'RSI (`{rsi_attuale:.1f}`) è sotto 75 (mercato non in ipercomprato estremo).\n\n"
+                f"🔹 L'RSI (`{rsi_attuale:.1f}`) è sotto 75.\n\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
                 f"🪙 **Saldo BTC:** {dati['btc']:.5f}"
             )
             
-        # CONDIZIONE DI VENDITA
         elif ema_veloce < ema_lenta and dati["btc"] > 0:
             ricavo = dati["btc"] * ultimo_prezzo
             quantita_venduta = dati["btc"]
@@ -144,13 +140,12 @@ def run_bot():
                 f"• **Prezzo uscita:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Profitto/Perdita:** {segno}${profitto_usd:,.2f} ({segno}{perc_operazione:.2f}%)\n\n"
                 f"📊 **Perché ho venduto?**\n"
-                f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è scesa sotto l'EMA lenta (`{ema_lenta:.1f}`): **inversione ribassista**.\n\n"
+                f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è scesa sotto l'EMA lenta (`{ema_lenta:.1f}`).\n\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
                 f"🪙 **Saldo BTC:** {dati['btc']}"
             )
             
-        # NESSUN ORDINE: Report di controllo
         else:
             motivo = ""
             if dati["btc"] > 0:
@@ -162,15 +157,14 @@ def run_bot():
                 
                 motivo = (
                     f"📈 **Posizione aperta in corso**\n"
-                    f"- Il trend è ancora favorevole o non si è ancora invertito.\n"
                     f"- Performance live: {segno}${profitto_attuale:,.2f} ({segno}{perc_profitto:.2f}%)\n"
                     f"- EMA Veloce: {ema_veloce:.1f} | EMA Lenta: {ema_lenta:.1f}"
                 )
             else:
                 if ema_veloce <= ema_lenta:
-                    motivo = f"⏳ **In attesa (Trend ribassista)**\nL'EMA veloce ({ema_veloce:.1f}) si trova sotto l'EMA lenta ({ema_lenta:.1f}). Aspetto che il trend giri al rialzo."
+                    motivo = f"⏳ **In attesa (Trend ribassista)**\nL'EMA veloce ({ema_veloce:.1f}) è sotto l'EMA lenta ({ema_lenta:.1f})."
                 elif rsi_attuale >= 75:
-                    motivo = f"⚠️ **In attesa (Mercato troppo tirato)**\nL'RSI è a {rsi_attuale:.1f} (sopra 75): il prezzo è in forte ipercomprato, rischio di acquisto sui massimi evitato."
+                    motivo = f"⚠️ **In attesa (Mercato in ipercomprato)**\nL'RSI è a {rsi_attuale:.1f}."
                 else:
                     motivo = "🔍 **In attesa di condizioni ottimali**\nIl mercato sta consolidando."
 
@@ -182,11 +176,9 @@ def run_bot():
                 f"📌 **Stato attuale:**\n{motivo}"
             )
 
-        # 5. Salvataggio stato
         with open(file_path, 'w') as f:
             json.dump(dati, f)
             
-        # 6. Invio notifica Telegram
         if messaggio:
             manda_messaggio_telegram(messaggio)
             
