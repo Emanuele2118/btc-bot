@@ -3,7 +3,6 @@ import json
 import requests
 import pandas as pd
 import numpy as np
-import yfinance as yf
 
 # Configurazioni Telegram
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -26,16 +25,28 @@ def manda_messaggio_telegram(testo):
         print(f"Errore invio Telegram: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot Formativo (15m) ---")
+    print("--- Inizio esecuzione Bot Formativo (Binance Live) ---")
     
     try:
-        # 1. Scarichiamo i dati a 15 minuti degli ultimi 2 giorni
-        df = yf.download("BTC-USD", interval="15m", period="2d")
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        df = df.dropna()
+        # 1. Scarichiamo le candele storiche e live a 15 minuti direttamente da Binance
+        url_binance_klines = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=100"
+        response = requests.get(url_binance_klines, timeout=5)
         
-        # 2. Indicatori Tecnici (EMA 9 e 21, RSI, ATR)
+        if response.status_code == 200:
+            raw_data = response.json()
+            df = pd.DataFrame(raw_data, columns=[
+                'Open_time', 'Open', 'High', 'Low', 'Close', 'Volume',
+                'Close_time', 'Quote_asset_volume', 'Number_of_trades',
+                'Taker_buy_base_asset_volume', 'Taker_buy_quote_asset_volume', 'Ignore'
+            ])
+            df = df[['Open', 'High', 'Low', 'Close']].astype(float)
+        else:
+            print("Errore nel recupero dati da Binance.")
+            return
+
+        # 2. Prezzo e Indicatori Tecnici (EMA 9 e 21, RSI, ATR) calcolati sui dati freschi
+        ultimo_prezzo = float(df['Close'].iloc[-1])
+        
         df['ema_fast'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['ema_slow'] = df['Close'].ewm(span=21, adjust=False).mean()
         
@@ -51,13 +62,12 @@ def run_bot():
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
         df['atr'] = true_range.rolling(window=14).mean()
         
-        ultimo_prezzo = float(df['Close'].iloc[-1])
         ema_veloce = float(df['ema_fast'].iloc[-1])
         ema_lenta = float(df['ema_slow'].iloc[-1])
         rsi_attuale = float(df['rsi'].iloc[-1])
         atr_attuale = float(df['atr'].iloc[-1])
         
-        print(f"Prezzo BTC: ${ultimo_prezzo:.2f} | RSI (15m): {rsi_attuale:.2f} | EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f}")
+        print(f"Prezzo BTC (Binance): ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f} | EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f}")
         
         # 3. Gestione portafoglio virtuale
         file_path = 'portfolio.json'
@@ -74,7 +84,7 @@ def run_bot():
                     
         messaggio = None
         
-        # 4. Logica di Trading con Motivazioni Dettagliate
+        # 4. Logica di Trading
         
         # CONDIZIONE DI ACQUISTO
         if ema_veloce > ema_lenta and rsi_attuale < 75 and dati["usd"] > 100:
@@ -140,7 +150,7 @@ def run_bot():
                 f"🪙 **Saldo BTC:** {dati['btc']}"
             )
             
-        # NESSUN ORDINE: Spieghiamo il motivo esatto
+        # NESSUN ORDINE: Report di controllo
         else:
             motivo = ""
             if dati["btc"] > 0:
