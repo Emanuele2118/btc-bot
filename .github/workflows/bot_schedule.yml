@@ -1,6 +1,8 @@
 name: Bot BTC/USDT Paper Trading 24h
 
 on:
+  schedule:
+    - cron: '*/5 * * * *'
   repository_dispatch:
     types: [trigger-bot]
   workflow_dispatch: # Mantiene attivo anche il pulsante per il test manuale
@@ -21,7 +23,7 @@ jobs:
 
       - name: Installa librerie
         run: |
-          pip install yfinance pandas numpy requests
+          pip install pandas numpy requests
 
       - name: Esegui script
         env:
