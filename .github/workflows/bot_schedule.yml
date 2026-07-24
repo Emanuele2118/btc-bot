@@ -1,14 +1,15 @@
-name: Bot BTC/USDT 24h
+name: Bot BTC/USDT Paper Trading 24h
 
 on:
   schedule:
-    # Esegue il bot automaticamente ogni 15 minuti, 24 ore su 24
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Permette al bot di salvare il file portfolio.json nel repository
     steps:
       - name: Clona repository
         uses: actions/checkout@v4
@@ -20,8 +21,17 @@ jobs:
 
       - name: Installa librerie
         run: |
-          pip install yfinance pandas numpy
+          pip install yfinance pandas numpy requests
 
       - name: Esegui script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python btc_bot.py
+
+      - name: Salva aggiornamenti portafoglio
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Aggiornamento automatico portafoglio virtuale [skip ci]"
+          file_pattern: portfolio.json
