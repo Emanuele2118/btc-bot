@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import numpy as np
 import matplotlib
-matplotlib.use('Agg') # Necessario per girare senza interfaccia grafica sui server
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from datetime import datetime, timezone
 
@@ -17,9 +17,8 @@ FEE_RATE = 0.005  # 0.5% di commissione per transazione
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
     """Genera un grafico avanzato a due pannelli con prezzo, medie mobili e pannello dati descrittivo."""
     try:
-        # Creiamo una figura con due sotto-pannelli (uno per il grafico, uno per i dati testuali sotto)
         fig = plt.figure(figsize=(10, 7.5), facecolor='#1e1e1e')
-        gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.3]) # Il grafico prende più spazio, il pannello sotto fa da dashboard
+        gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.3])
         
         # --- PANNELLO 1: GRAFICO PREZZO & MEDIE MOBILI ---
         ax1 = fig.add_subplot(gs[0])
@@ -32,7 +31,6 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
         ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#ff00ff', linewidth=1.2, linestyle='--')
         ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#ffcc00', linewidth=1.2, linestyle='--')
         
-        # Evidenziamo l'ultimo prezzo esatto con un pallino e un'etichetta
         ultimo_idx = len(x) - 1
         ax1.scatter([ultimo_idx], [prezzo_attuale], color='#00ffcc', s=45, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
@@ -53,9 +51,8 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
         # --- PANNELLO 2: DASHBOARD DATI UTILI IN BASSO ---
         ax2 = fig.add_subplot(gs[1])
         ax2.set_facecolor('#161616')
-        ax2.axis('off') # Nascondiamo gli assi cartesiani in questo riquadro
+        ax2.axis('off')
         
-        # Scriviamo i dati chiave in modo pulito e leggibile per chiunque
         info_testo = (
             f" 📊  PANNELLO DI CONTROLLO RAPIDO\n"
             f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI Attuale: {rsi_attuale:.1f} (Target acquisto < 35)\n"
@@ -79,7 +76,7 @@ def manda_messaggio_telegram(testo, chart_path=None):
         print("Credenziali Telegram non configurate.")
         return
     
-    # Se abbiamo un grafico generato, lo inviamo come foto vera insieme al testo
+    # Invio sempre con foto se il grafico è disponibile
     if chart_path and os.path.exists(chart_path):
         url_telegram = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         try:
@@ -90,15 +87,15 @@ def manda_messaggio_telegram(testo, chart_path=None):
                     "caption": testo,
                     "parse_mode": "Markdown"
                 }
-                response = requests.post(url_telegram, data=data, files=files, timeout=30)
+                response = requests.post(url_telegram, data=data, files=files, timeout=40)
                 if response.status_code == 200:
                     return
                 else:
-                    print(f"Invio foto fallito (Codice {response.status_code}), ripiego su testo.")
+                    print(f"Invio foto fallito (Codice {response.status_code}: {response.text}), ripiego su testo.")
         except Exception as e:
             print(f"Errore invio foto Telegram: {e}")
             
-    # Fallback se la foto non va a buon fine
+    # Fallback solo testo se la foto fallisce
     url_fallback = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload_fallback = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -106,13 +103,12 @@ def manda_messaggio_telegram(testo, chart_path=None):
         "parse_mode": "Markdown"
     }
     try:
-        requests.post(url_fallback, json=payload_fallback, timeout=15)
+        requests.post(url_fallback, json=payload_fallback, timeout=20)
     except Exception as e:
         print(f"Errore invio messaggio di testo Telegram: {e}")
 
 def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, profitto_usd, motivo):
     if not GOOGLE_SHEET_URL:
-        print("URL Google Sheet non configurato nei secret.")
         return
     payload = {
         "Data_Ora": data_ora,
@@ -129,8 +125,33 @@ def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, pro
         print(f"Errore invio a Google Sheets: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot (Google Sheets Sync + Grafico Avanzato) ---")
+    print("--- Inizio esecuzione Bot ---")
     
+    file_path = 'portfolio.json'
+    dati = {
+        "usd": 10000.0, 
+        "btc": 0.0, 
+        "Lotti": [],
+        "ultima_operazione": None,
+        "prezzo_max_raggiunto": 0.0,
+        "ultimo_invio_timestamp": 0
+    }
+    
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            try:
+                caricati = json.load(f)
+                dati.update(caricati)
+            except:
+                pass
+
+    timestamp_attuale = int(datetime.now(timezone.utc).timestamp())
+    
+    # 🔒 ANTISPAM / ANTI-DUPPLICAZIONE: Se sono passati meno di 50 secondi dall'ultimo invio, blocca esecuzioni duplicate
+    if timestamp_attuale - dati.get("ultimo_invio_timestamp", 0) < 50:
+        print("Esecuzione bloccata: è passato troppo poco tempo dall'ultimo messaggio inviato.")
+        return
+
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -139,15 +160,13 @@ def run_bot():
         if response.status_code == 200:
             raw_data = response.json()
             raw_data.reverse()
-            
             df = pd.DataFrame(raw_data, columns=['Time', 'Low', 'High', 'Open', 'Close', 'Volume'])
             df = df[['Open', 'High', 'Low', 'Close']].astype(float)
         else:
-            print(f"Errore nel recupero dati da Coinbase: {response.status_code}")
+            print(f"Errore Coinbase: {response.status_code}")
             return
 
         ultimo_prezzo = float(df['Close'].iloc[-1])
-        timestamp_attuale = int(datetime.now(timezone.utc).timestamp())
         stringa_data = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         
         df['ema_veloce'] = df['Close'].ewm(span=9, adjust=False).mean()
@@ -163,30 +182,7 @@ def run_bot():
         ema_l = float(df['ema_lenta'].iloc[-1])
         rsi_attuale = float(df['rsi'].iloc[-1])
         
-        file_path = 'portfolio.json'
-        dati = {
-            "usd": 10000.0, 
-            "btc": 0.0, 
-            "Lotti": [],
-            "ultima_operazione": None,
-            "prezzo_max_raggiunto": 0.0
-        }
-        
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                try:
-                    dati = json.load(f)
-                    if "Lotti" not in dati:
-                        dati["Lotti"] = []
-                    if "ultima_operazione" not in dati:
-                        dati["ultima_operazione"] = None
-                    if "prezzo_max_raggiunto" not in dati:
-                        dati["prezzo_max_raggiunto"] = 0.0
-                except:
-                    pass
-                    
         messaggio = None
-        
         tot_btc = sum(lotto["quantita"] for lotto in dati["Lotti"])
         prezzo_medio = 0.0
         if tot_btc > 0:
@@ -199,7 +195,7 @@ def run_bot():
 
         trend_favorevole = ema_v >= (ema_l * 0.998)
         
-        # --- TRAILING TAKE PROFIT ---
+        # Trailing Take Profit
         target_iniziale_raggiunto = profitto_perc >= 0.8
         if tot_btc > 0 and target_iniziale_raggiunto:
             if ultimo_prezzo > dati["prezzo_max_raggiunto"]:
@@ -209,186 +205,104 @@ def run_bot():
             
         trailing_scattato = False
         if tot_btc > 0 and dati["prezzo_max_raggiunto"] > 0:
-            ritracciamento_dal_picco = ((dati["prezzo_max_raggiunto"] - ultimo_prezzo) / dati["prezzo_max_raggiunto"]) * 100
-            if profitto_perc >= 0.8 and ritracciamento_dal_picco >= 0.3:
+            ritracciamento = ((dati["prezzo_max_raggiunto"] - ultimo_prezzo) / dati["prezzo_max_raggiunto"]) * 100
+            if profitto_perc >= 0.8 and ritracciamento >= 0.3:
                 trailing_scattato = True
 
-        # --- RETROSPETTIVA ---
+        # Retrospettiva
         nota_retrospettiva = ""
-        if dati["ultima_operazione"] is not None:
+        if dati.get("ultima_operazione") is not None:
             op = dati["ultima_operazione"]
-            tempo_trascorso_minuti = (timestamp_attuale - op["timestamp"]) / 60
-            
-            if tempo_trascorso_minuti >= 5:
-                prezzo_operazione = op["prezzo"]
-                differenza_prezzo = ultimo_prezzo - prezzo_operazione
-                perc_diff = (differenza_prezzo / prezzo_operazione) * 100
-                
+            tempo_minuti = (timestamp_attuale - op["timestamp"]) / 60
+            if tempo_minuti >= 5:
+                prezzo_op = op["prezzo"]
+                diff_p = ultimo_prezzo - prezzo_op
+                perc_diff = (diff_p / prezzo_op) * 100
                 if op["tipo"] == "VENDITA":
-                    if differenza_prezzo < 0:
-                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Ottimo timing! Venduto a ${prezzo_operazione:,.2f} e nei minuti successivi il grafico è sceso del {abs(perc_diff):.2f}%."
+                    if diff_p < 0:
+                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Ottimo timing! Venduto a ${prezzo_op:,.2f} e il mercato è sceso del {abs(perc_diff):.2f}%."
                     else:
-                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Il grafico ha continuato a salire (+{perc_diff:.2f}%) dopo la vendita."
+                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Il mercato ha continuato a salire (+{perc_diff:.2f}%) dopo la vendita."
                 elif op["tipo"] == "ACQUISTO":
-                    if differenza_prezzo > 0:
-                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Ottima intuizione! Comprato a ${prezzo_operazione:,.2f} e il grafico è salito del +{perc_diff:.2f}%."
+                    if diff_p > 0:
+                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Ottima intuizione! Comprato a ${prezzo_op:,.2f} e il mercato è salito del +{perc_diff:.2f}%."
                     else:
-                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Dopo l'acquisto il grafico è sceso temporaneamente del {perc_diff:.2f}%."
-                
+                        nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Dopo l'acquisto il mercato è sceso temporaneamente del {perc_diff:.2f}%."
                 dati["ultima_operazione"] = None
 
-        # 1. ACQUISTO (Compound Dinamico)
-        capitale_totale_stimato = dati["usd"] + (tot_btc * ultimo_prezzo)
+        # 1. ACQUISTO
+        capitale_totale = dati["usd"] + (tot_btc * ultimo_prezzo)
         if rsi_attuale < 35 and dati["usd"] > 100 and len(dati["Lotti"]) < 3 and trend_favorevole:
-            spesa_lorda = capitale_totale_stimato * 0.30
+            spesa_lorda = capitale_totale * 0.30
             if spesa_lorda > dati["usd"]:
                 spesa_lorda = dati["usd"]
-                
-            commissione_acquisto = spesa_lorda * FEE_RATE
-            spesa_netta = spesa_lorda - commissione_acquisto
-            quantita = spesa_netta / ultimo_prezzo
+            comm_acq = spesa_lorda * FEE_RATE
+            qta = (spesa_lorda - comm_acq) / ultimo_prezzo
             
             dati["usd"] -= spesa_lorda
-            dati["Lotti"].append({"quantita": quantita, "prezzo": ultimo_prezzo})
+            dati["Lotti"].append({"quantita": qta, "prezzo": ultimo_prezzo})
+            dati["ultima_operazione"] = {"tipo": "ACQUISTO", "prezzo": ultimo_prezzo, "timestamp": timestamp_attuale}
             
-            dati["ultima_operazione"] = {
-                "tipo": "ACQUISTO",
-                "prezzo": ultimo_prezzo,
-                "timestamp": timestamp_attuale
-            }
-            
-            num_lotto = len(dati["Lotti"])
-            registra_su_google_sheets(stringa_data, "ACQUISTO", ultimo_prezzo, quantita, commissione_acquisto, 0.0, f"Lotto #{num_lotto} (Compound)")
-            
-            messaggio = (
-                f"🟢 *ACQUISTO LOTTO #{num_lotto} ESEGUITO* 🟢\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"• *Prezzo:* ${ultimo_prezzo:,.2f}\n"
-                f"• *Quantità netta:* {quantita:.5f} BTC\n"
-                f"• *Spesa lorda:* ${spesa_lorda:,.2f}\n"
-                f"• *Fee (0.5%):* -${commissione_acquisto:,.2f}\n"
-                f"• *RSI:* {rsi_attuale:.1f}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 *Saldo USD residuo:* ${dati['usd']:,.2f}"
-            )
+            registra_su_google_sheets(stringa_data, "ACQUISTO", ultimo_prezzo, qta, comm_acq, 0.0, f"Lotto #{len(dati['Lotti'])}")
+            messaggio = f"🟢 *ACQUISTO LOTTO #{len(dati['Lotti'])} ESEGUITO* 🟢\n• Prezzo: ${ultimo_prezzo:,.2f}\n• Quantità: {qta:.5f} BTC\n• Saldo USD: ${dati['usd']:,.2f}"
 
-        # 2. VENDITA (Trailing Take Profit o RSI)
+        # 2. VENDITA
         elif tot_btc > 0 and (trailing_scattato or rsi_attuale > 65):
-            lotto_da_vendere = dati["Lotti"].pop(0)
-            quantita_venduta = lotto_da_vendere["quantita"]
-            prezzo_carico_lotto = lotto_da_vendere["prezzo"]
-            
-            ricavo_lordo = quantita_venduta * ultimo_prezzo
-            commissione_vendita = ricavo_lordo * FEE_RATE
-            ricavo_netto = ricavo_lordo - commissione_vendita
-            
-            costo_iniziale_lotto = quantita_venduta * prezzo_carico_lotto
-            profitto_usd = ricavo_netto - costo_iniziale_lotto
-            perc_lotto_netta = (profitto_usd / costo_iniziale_lotto) * 100
-            segno = "+" if profitto_usd >= 0 else ""
+            lotto = dati["Lotti"].pop(0)
+            qta_v = lotto["quantita"]
+            ricavo_lordo = qta_v * ultimo_prezzo
+            comm_vend = ricavo_lordo * FEE_RATE
+            ricavo_netto = ricavo_lordo - comm_vend
+            profitto_usd = ricavo_netto - (qta_v * lotto["prezzo"])
             
             dati["usd"] += ricavo_netto
             dati["prezzo_max_raggiunto"] = 0.0
+            dati["ultima_operazione"] = {"tipo": "VENDITA", "prezzo": ultimo_prezzo, "timestamp": timestamp_attuale}
             
-            dati["ultima_operazione"] = {
-                "tipo": "VENDITA",
-                "prezzo": ultimo_prezzo,
-                "timestamp": timestamp_attuale
-            }
-            
-            motivo = f"Trailing Take Profit" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f})"
-            registra_su_google_sheets(stringa_data, "VENDITA", ultimo_prezzo, quantita_venduta, commissione_vendita, profitto_usd, motivo)
-            
-            messaggio = (
-                f"🔵 *VENDITA PARZIALE ESEGUITA* 🔵\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"• *Prezzo uscita:* ${ultimo_prezzo:,.2f}\n"
-                f"• *Profitto netto:* {segno}${profitto_usd:,.2f} ({segno}{perc_lotto_netta:.2f}%)\n"
-                f"• *Motivo:* {motivo}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 *Saldo USD:* ${dati['usd']:,.2f}"
-            )
+            motivo = "Trailing Take Profit" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f})"
+            registra_su_google_sheets(stringa_data, "VENDITA", ultimo_prezzo, qta_v, comm_vend, profitto_usd, motivo)
+            messaggio = f"🔵 *VENDITA PARZIALE ESEGUITA* 🔵\n• Prezzo: ${ultimo_prezzo:,.2f}\n• Profitto: ${profitto_usd:,.2f}\n• Saldo USD: ${dati['usd']:,.2f}"
 
         # 3. STOP LOSS
         elif tot_btc > 0 and profitto_perc <= -1.8:
-            ricavo_lordo_totale = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
-            fee_totali = ricavo_lordo_totale * FEE_RATE
-            ricavo_netto_totale = ricavo_lordo_totale - fee_totali
-            costo_totale_iniziale = sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
-            perdita_usd = ricavo_netto_totale - costo_totale_iniziale
+            ricavo_tot = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
+            comm_tot = ricavo_tot * FEE_RATE
+            perdita_usd = (ricavo_tot - comm_tot) - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
             
-            quantita_totale_venduta = tot_btc
-            dati["usd"] += ricavo_netto_totale
+            qta_tot = tot_btc
+            dati["usd"] += (ricavo_tot - comm_tot)
             dati["Lotti"] = []
             dati["prezzo_max_raggiunto"] = 0.0
+            dati["ultima_operazione"] = {"tipo": "VENDITA", "prezzo": ultimo_prezzo, "timestamp": timestamp_attuale}
             
-            dati["ultima_operazione"] = {
-                "tipo": "VENDITA",
-                "prezzo": ultimo_prezzo,
-                "timestamp": timestamp_attuale
-            }
-            
-            registra_su_google_sheets(stringa_data, "STOP_LOSS", ultimo_prezzo, quantita_totale_venduta, fee_totali, perdita_usd, "Chiusura di salvaguardia")
-            
-            messaggio = (
-                f"🔴 *STOP LOSS DI PROTEZIONE* 🔴\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"• *Perdita netta:* -${abs(perdita_usd):,.2f} ({profitto_perc:.2f}%)\n"
-                f"• *Motivo:* Chiusura di salvaguardia.\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 *Saldo USD:* ${dati['usd']:,.2f}"
-            )
+            registra_su_google_sheets(stringa_data, "STOP_LOSS", ultimo_prezzo, qta_tot, comm_tot, perdita_usd, "Salvaguardia")
+            messaggio = f"🔴 *STOP LOSS ESEGUITO* 🔴\n• Perdita: -${abs(perdita_usd):,.2f}\n• Saldo USD: ${dati['usd']:,.2f}"
 
-        # Report di controllo in attesa
+        # Report Standard
         if not messaggio:
-            tot_btc_aggiornato = sum(l["quantita"] for l in dati["Lotti"])
-            if tot_btc_aggiornato > 0:
-                valore_attuale = tot_btc_aggiornato * ultimo_prezzo
-                profitto_temp = valore_attuale - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
-                segno = "+" if profitto_temp >= 0 else ""
-                stato = (
-                    f"📈 *Posizione attiva ({len(dati['Lotti'])} lotti)*\n"
-                    f"• Prezzo medio: ${prezzo_medio:,.2f}\n"
-                    f"• Performance netta: {segno}${profitto_temp:,.2f} ({segno}{profitto_perc:.2f}%)"
-                )
+            tot_btc_agg = sum(l["quantita"] for l in dati["Lotti"])
+            if tot_btc_agg > 0:
+                valore = tot_btc_agg * ultimo_prezzo
+                p_temp = valore - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
+                segno = "+" if p_temp >= 0 else ""
+                stato = f"📈 *Posizione attiva ({len(dati['Lotti'])} lotti)*\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Performance: {segno}${p_temp:,.2f} ({segno}{profitto_perc:.2f}%)"
             else:
-                if trend_favorevole:
-                    stato = (
-                        f"🟢 *In attesa di acquisto (Trend FAVOREVOLE)*\n"
-                        f"• Semaforo VERDE per comprare (Interessi composti attivi).\n"
-                        f"• *Cosa aspetto?* L'RSI è a {rsi_attuale:.1f} (obiettivo < 35) per un calo temporaneo."
-                    )
-                else:
-                    stato = (
-                        f"🔴 *In attesa protetta (Trend RIBASSISTA)*\n"
-                        f"• Filtro anti-crollo attivo: acquisti bloccati.\n"
-                        f"• *Cosa aspetto?* Che le medie mobili tornino a salire."
-                    )
+                stato = f"🟢 *In attesa di acquisto (Trend FAVOREVOLE)*\n• RSI: {rsi_attuale:.1f} (Target < 35)" if trend_favorevole else f"🔴 *In attesa protetta (Trend RIBASSISTA)*"
 
-            messaggio = (
-                f"🛡️ *REPORT DI MERCATO* 🛡️\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"• *Prezzo BTC:* ${ultimo_prezzo:,.2f}\n"
-                f"{nota_retrospettiva}\n\n"
-                f"📌 *Analisi:*\n{stato}"
-            )
+            messaggio = f"🛡️ *REPORT DI MERCATO* 🛡️\n━━━━━━━━━━━━━━━━━━━\n• *Prezzo BTC:* ${ultimo_prezzo:,.2f}\n{nota_retrospettiva}\n\n📌 *Analisi:*\n{stato}"
+
+        # Aggiorna il timestamp dell'ultimo invio riuscito
+        dati["ultimo_invio_timestamp"] = timestamp_attuale
 
         with open(file_path, 'w') as f:
             json.dump(dati, f)
             
-        # Preparazione stringa di stato per la dashboard nel grafico
-        if tot_btc > 0:
-            stato_dashboard = f"Posizione attiva ({len(dati['Lotti'])} lotti) - P&L: {profitto_perc:+.2f}%"
-        else:
-            stato_dashboard = "In attesa di acquisto (Trend Favorevole)" if trend_favorevole else "In attesa protetta (Trend Ribassista)"
-
-        # Generiamo il grafico avanzato con i dati in basso
+        stato_dashboard = f"Posizione attiva ({len(dati['Lotti'])} lotti) - P&L: {profitto_perc:+.2f}%" if tot_btc > 0 else ("In attesa di acquisto" if trend_favorevole else "In attesa protetta")
         chart_file = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard)
             
         if messaggio:
             manda_messaggio_telegram(messaggio, chart_file)
             
-        # Pulisci il file immagine temporaneo locale se esiste
         if chart_file and os.path.exists(chart_file):
             try:
                 os.remove(chart_file)
@@ -396,7 +310,7 @@ def run_bot():
                 pass
             
     except Exception as e:
-        print(f"Errore durante l'esecuzione del bot: {e}")
+        print(f"Errore esecuzione bot: {e}")
 
 if __name__ == "__main__":
     run_bot()
