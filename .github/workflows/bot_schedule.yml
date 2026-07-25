@@ -11,7 +11,7 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write 
+      contents: write
     steps:
       - name: Clona repository
         uses: actions/checkout@v4
