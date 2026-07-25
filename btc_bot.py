@@ -14,37 +14,64 @@ GOOGLE_SHEET_URL = os.environ.get('GOOGLE_SHEET_URL')
 
 FEE_RATE = 0.005  # 0.5% di commissione per transazione
 
-def genera_grafico_chart(df):
-    """Genera un'immagine pulita del grafico dei prezzi e delle medie mobili e la salva localmente."""
+def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
+    """Genera un grafico avanzato a due pannelli con prezzo, medie mobili e pannello dati descrittivo."""
     try:
-        plt.figure(figsize=(10, 5), facecolor='#1e1e1e')
-        ax = plt.axes()
-        ax.set_facecolor('#1e1e1e')
+        # Creiamo una figura con due sotto-pannelli (uno per il grafico, uno per i dati testuali sotto)
+        fig = plt.figure(figsize=(10, 7.5), facecolor='#1e1e1e')
+        gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.3]) # Il grafico prende più spazio, il pannello sotto fa da dashboard
         
-        # Prendi gli ultimi 100 periodi per un grafico leggibile
+        # --- PANNELLO 1: GRAFICO PREZZO & MEDIE MOBILI ---
+        ax1 = fig.add_subplot(gs[0])
+        ax1.set_facecolor('#1e1e1e')
+        
         dati_plot = df.tail(100).copy()
         x = range(len(dati_plot))
         
-        ax.plot(x, dati_plot['Close'], label='Prezzo BTC', color='#00ffcc', linewidth=1.5)
-        ax.plot(x, dati_plot['ema_veloce'], label='EMA 9', color='#ff00ff', linewidth=1, linestyle='--')
-        ax.plot(x, dati_plot['ema_lenta'], label='EMA 50', color='#ffcc00', linewidth=1, linestyle='--')
+        ax1.plot(x, dati_plot['Close'], label='Prezzo BTC', color='#00ffcc', linewidth=1.8)
+        ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#ff00ff', linewidth=1.2, linestyle='--')
+        ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#ffcc00', linewidth=1.2, linestyle='--')
         
-        ax.set_title('BTC-USD | Trend & Medie Mobili', color='white', fontsize=12, fontweight='bold', pad=10)
-        ax.tick_params(colors='white', labelsize=9)
-        ax.grid(True, color='#333333', linestyle=':', alpha=0.7)
+        # Evidenziamo l'ultimo prezzo esatto con un pallino e un'etichetta
+        ultimo_idx = len(x) - 1
+        ax1.scatter([ultimo_idx], [prezzo_attuale], color='#00ffcc', s=45, zorder=5)
+        ax1.annotate(f"${prezzo_attuale:,.2f}", 
+                     xy=(ultimo_idx, prezzo_attuale), 
+                     xytext=(-65, 12), textcoords='offset points',
+                     color='#00ffcc', fontsize=9, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.25', fc='#111111', ec='#00ffcc', alpha=0.85))
+
+        ax1.set_title('BTC-USD | Analisi Tecnica & Medie Mobili', color='white', fontsize=13, fontweight='bold', pad=12)
+        ax1.tick_params(colors='white', labelsize=9)
+        ax1.grid(True, color='#333333', linestyle=':', alpha=0.7)
         
-        for spine in ax.spines.values():
+        for spine in ax1.spines.values():
             spine.set_color('#444444')
             
-        ax.legend(loc='upper left', facecolor='#2e2e2e', edgecolor='none', labelcolor='white', fontsize=9)
+        ax1.legend(loc='upper left', facecolor='#2e2e2e', edgecolor='none', labelcolor='white', fontsize=9)
+
+        # --- PANNELLO 2: DASHBOARD DATI UTILI IN BASSO ---
+        ax2 = fig.add_subplot(gs[1])
+        ax2.set_facecolor('#161616')
+        ax2.axis('off') # Nascondiamo gli assi cartesiani in questo riquadro
         
+        # Scriviamo i dati chiave in modo pulito e leggibile per chiunque
+        info_testo = (
+            f" 📊  PANNELLO DI CONTROLLO RAPIDO\n"
+            f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI Attuale: {rsi_attuale:.1f} (Target acquisto < 35)\n"
+            f" • Stato Operativo: {stato_testo}"
+        )
+        
+        ax2.text(0.02, 0.5, info_testo, color='white', fontsize=10, family='monospace',
+                 verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#222222', ec='#555555'))
+
         plt.tight_layout()
         chart_path = 'temp_chart.png'
         plt.savefig(chart_path, dpi=150, facecolor='#1e1e1e', edgecolor='none')
         plt.close()
         return chart_path
     except Exception as e:
-        print(f"Errore nella generazione del grafico locale: {e}")
+        print(f"Errore nella generazione del grafico avanzato: {e}")
         return None
 
 def manda_messaggio_telegram(testo, chart_path=None):
@@ -52,7 +79,7 @@ def manda_messaggio_telegram(testo, chart_path=None):
         print("Credenziali Telegram non configurate.")
         return
     
-    # Se abbiamo un grafico generato, lo inviamo come foto vera
+    # Se abbiamo un grafico generato, lo inviamo come foto vera insieme al testo
     if chart_path and os.path.exists(chart_path):
         url_telegram = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         try:
@@ -102,7 +129,7 @@ def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, pro
         print(f"Errore invio a Google Sheets: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot (Google Sheets Sync + Grafico Reale) ---")
+    print("--- Inizio esecuzione Bot (Google Sheets Sync + Grafico Avanzato) ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
@@ -349,13 +376,19 @@ def run_bot():
         with open(file_path, 'w') as f:
             json.dump(dati, f)
             
-        # Generiamo il grafico locale aggiornato con i dati reali
-        chart_file = genera_grafico_chart(df)
+        # Preparazione stringa di stato per la dashboard nel grafico
+        if tot_btc > 0:
+            stato_dashboard = f"Posizione attiva ({len(dati['Lotti'])} lotti) - P&L: {profitto_perc:+.2f}%"
+        else:
+            stato_dashboard = "In attesa di acquisto (Trend Favorevole)" if trend_favorevole else "In attesa protetta (Trend Ribassista)"
+
+        # Generiamo il grafico avanzato con i dati in basso
+        chart_file = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard)
             
         if messaggio:
             manda_messaggio_telegram(messaggio, chart_file)
             
-        # Pulisci il file immagine temporaneo se esiste
+        # Pulisci il file immagine temporaneo locale se esiste
         if chart_file and os.path.exists(chart_file):
             try:
                 os.remove(chart_file)
