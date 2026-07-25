@@ -98,13 +98,10 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO ====================
+# ==================== GENERAZIONE GRAFICO PULITO E PRECISO ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
-        fig = plt.figure(figsize=(10, 7.5), facecolor='white')
-        gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.3])
-        
-        ax1 = fig.add_subplot(gs[0])
+        fig, ax1 = plt.subplots(figsize=(10, 7), facecolor='white')
         ax1.set_facecolor('white')
         
         dati_plot = df.tail(90).copy().reset_index(drop=True)
@@ -116,15 +113,15 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
             h = dati_plot['High'].iloc[i]
             l = dati_plot['Low'].iloc[i]
             
-            colore = '#26a69a' if c >= o else '#9c27b0'
+            colore = '#00897b' if c >= o else '#8e24aa'
             
             ax1.plot([i, i], [l, h], color=colore, linewidth=1, zorder=1)
             bottom = min(o, c)
             height = abs(c - o) if abs(c - o) > 0 else 0.01
             ax1.bar(i, height, bottom=bottom, color=colore, width=0.6, zorder=2)
 
-        ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#ff9800', linewidth=1.2, linestyle='--')
-        ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3f51b5', linewidth=1.2, linestyle='--')
+        ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#fb8c00', linewidth=1.2, linestyle='--')
+        ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3949ab', linewidth=1.2, linestyle='--')
         
         if prezzo_medio > 0:
             ax1.axhline(y=prezzo_medio, color='#0288d1', linestyle='-.', linewidth=1.5, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
@@ -134,16 +131,16 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
             ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=1.8, alpha=0.9, label=etichetta_sl)
 
         ultimo_idx = len(x) - 1
-        ax1.scatter([ultimo_idx], [prezzo_attuale], color='#26a69a', s=45, zorder=5)
+        ax1.scatter([ultimo_idx], [prezzo_attuale], color='#00897b', s=50, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
                      xy=(ultimo_idx, prezzo_attuale), 
-                     xytext=(-65, 12), textcoords='offset points',
+                     xytext=(-70, 15), textcoords='offset points',
                      color='black', fontsize=9, fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.25', fc='#f0f0f0', ec='#26a69a', alpha=0.9))
+                     bbox=dict(boxstyle='round,pad=0.3', fc='#f5f5f5', ec='#00897b', alpha=0.9))
 
-        ax1.set_title('BTC-USD (1m) | Profit Lockdown & Risk-Managed Bot', color='black', fontsize=13, fontweight='bold', pad=12)
+        ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='black', fontsize=13, fontweight='bold', pad=15)
         ax1.tick_params(colors='black', labelsize=9)
-        ax1.grid(True, color='#d0d0d0', linestyle='--', alpha=0.5)
+        ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.5)
         
         if 'Datetime' in dati_plot.columns:
             orari = [dt.strftime('%H:%M') for dt in dati_plot['Datetime']]
@@ -154,15 +151,12 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
         for spine in ax1.spines.values():
             spine.set_color('#cccccc')
             
-        ax1.legend(loc='upper left', facecolor='#f9f9f9', edgecolor='none', labelcolor='black', fontsize=8)
+        ax1.legend(loc='upper left', facecolor='#fafafa', edgecolor='none', labelcolor='black', fontsize=8)
 
-        ax2 = fig.add_subplot(gs[1])
-        ax2.set_facecolor('#f4f4f4')
-        ax2.axis('off')
-        
-        info_testo = f" 📊  PANNELLO DI CONTROLLO (1m | MAX {MAX_LOTTI} LOTTI)\n • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato Operativo: {stato_testo}"
-        ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace',
-                 verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
+        # Pannello di controllo testuale in basso pulito
+        props = dict(boxstyle='square,pad=0.8', facecolor='#eeeeee', edgecolor='#cccccc', alpha=0.9)
+        info_testo = f"  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato Operativo: {stato_testo}"
+        ax1.text(0.02, -0.15, info_testo, transform=ax1.transAxes, fontsize=9, family='monospace', verticalalignment='top', bbox=props)
 
         plt.tight_layout()
         chart_path = 'temp_chart.png'
@@ -227,7 +221,8 @@ def esegui_bot():
 
     azione_eseguita = False
     messaggio_notifica = ""
-    stato_dashboard = f"Posizioni attive ({lotti_attivi}/{MAX_LOTTI} lotti)"
+    profitto_P_L = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
+    stato_dashboard = f"Posizioni attive ({lotti_attivi}/{MAX_LOTTI}) | P&L: {profitto_P_L:+.2f}% | SL: {stop_loss_effettivo_perc:+.1f}%"
 
     # --- CONTROLLO USCITA (STOP LOSS / LOCKDOWN) ---
     if lotti_attivi > 0 and prezzo_medio > 0:
@@ -242,13 +237,12 @@ def esegui_bot():
                 f"🚨 *CHIUSURA POSIZIONE (STOP / PROFIT LOCKDOWN)* 🚨\n\n"
                 f"• Prezzo Chiusura: ${ultimo_prezzo:,.2f}\n"
                 f"• Prezzo Medio Carico: ${prezzo_medio:,.2f}\n"
+                f"• Motivo: Raggiunto il livello di protezione/stop fissato al {stop_loss_effettivo_perc:+.1f}% sul prezzo medio.\n"
                 f"• Profitto/Perdita: ${profitto_operazione:+,.2f} ({((ultimo_prezzo/prezzo_medio)-1)*100:+.2f}%)\n"
                 f"• Saldo USD Aggiornato: ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
             salva_portafoglio(portafoglio)
-            lotti_attivi = 0
-            prezzo_medio = 0.0
 
     # --- CONTROLLO INGRESSO (FINO A 4 LOTTI) ---
     if not azione_eseguita:
@@ -269,13 +263,13 @@ def esegui_bot():
                 prezzo_medio = ultimo_prezzo
                 lotti_attivi = 1
                 messaggio_notifica = (
-                    f"🟢 *ACQUISTO LOTTO (#1/{MAX_LOTTI}) [1m]* 🟢\n\n"
-                    f"• Prezzo entrata: ${ultimo_prezzo:,.2f}\n"
+                    f"🟢 *APERTURA PRIMO LOTTO (#1/{MAX_LOTTI})* 🟢\n\n"
+                    f"• Prezzo Entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Quantità: {quantita:.5f} BTC\n"
                     f"• Spesa: ${CAPITALE_PER_LOTTO:,.2f}\n"
-                    f"• Motivazione: RSI ({rsi_attuale:.1f}) / Setup EMA.\n\n"
+                    f"• Motivo: RSI a {rsi_attuale:.1f} (in zona d'ingresso favorevole) e incrocio EMA veloce sopra la lenta.\n\n"
                     f"📊 Lotti attivi: 1/{MAX_LOTTI}\n"
-                    f"💰 Saldo USD: ${portafoglio['saldo_usd']:,.2f}"
+                    f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
@@ -299,33 +293,34 @@ def esegui_bot():
                 lotti_attivi = nuovo_id
                 
                 messaggio_notifica = (
-                    f"🟢 *ACQUISTO LOTTO (#{nuovo_id}/{MAX_LOTTI}) CON PROFIT LOCKDOWN* 🟢\n\n"
-                    f"• Prezzo entrata: ${ultimo_prezzo:,.2f}\n"
-                    f"• Quantità acquistata: {quantita:.5f} BTC\n"
-                    f"• Spesa totale lorda: ${spesa_totale:,.2f}\n"
-                    f"• Motivazione: Ribasso dal prezzo medio ({((ultimo_prezzo/prezzo_medio)-1)*100:.2f}%). Lotto #{nuovo_id} aggiunto.\n\n"
-                    f"📊 Lotti attivi totali: {nuovo_id}\n"
+                    f"🟢 *INCREMENTO POSIZIONE: LOTTO (#{nuovo_id}/{MAX_LOTTI})* 🟢\n\n"
+                    f"• Prezzo Ingresso Lotto: ${ultimo_prezzo:,.2f}\n"
+                    f"• Motivo: Il prezzo è sceso del {((ultimo_prezzo/prezzo_medio)-1)*100:.2f}% rispetto al prezzo medio di carico, attivando la mediazione controllata del lotto #{nuovo_id}.\n"
+                    f"• Nuovo Prezzo Medio: ${prezzo_medio:,.2f}\n"
+                    f"• Spesa Totale Investita: ${spesa_totale:,.2f}\n\n"
+                    f"📊 Lotti attivi totali: {nuovo_id}/{MAX_LOTTI}\n"
                     f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
 
+    # Se non ci sono state aperture/chiusure, inviamo comunque il report di controllo con le motivazioni dell'attesa
     if not azione_eseguita:
-        performance_netta = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
+        motivo_attesa = "Il mercato non soddisfa ancora i criteri di ingresso (RSI o ribasso dal prezzo medio non raggiunto)."
+        if lotti_attivi > 0:
+            motivo_attesa = f"Posizioni aperte ({lotti_attivi} lotti). In attesa di raggiungere il target di profitto o il livello di stop/lockdown."
+        
         messaggio_notifica = (
             f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n\n"
-            f"📌 *Analisi e Decisione del Bot:*\n"
-            f"📈 Posizioni attive ({lotti_attivi} lotti in corso)\n"
-            f"• Quantità totale BTC: {quantita_totale:.5f}\n"
+            f"📌 *Analisi e Decisione del Bot (In Attesa):*\n"
+            f"• RSI attuale: {rsi_attuale:.1f}\n"
+            f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI} lotti\n"
             f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
-            f"• Performance netta: {performance_netta:+.2f}%\n"
-            f"• Protezione attiva: Stop Loss dinamico a {stop_loss_effettivo_perc:+.2f}% (Supporti strutturali)."
+            f"• Performance netta: {profitto_P_L:+.2f}%\n"
+            f"• Motivo dell'attesa: {motivo_attesa}"
         )
 
+    # Generazione grafico e invio sempre attivo su Telegram
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, prezzo_medio, stop_loss_effettivo_perc)
-    invia_messaggio_telegram(messaggio_notifica, chart_path)
-    print("Esecuzione completata con successo.")
-
-if __name__ == "__main__":
-    esegui_bot()
+    invia_messaggio_telegram(messaggio_
