@@ -20,7 +20,7 @@ CAPITALE_INIZIALE = 10000.0
 CAPITALE_PER_LOTTO = 2500.0   
 MAX_LOTTI = 4                 
 
-FEE_PERCENTUALE = 0.001       # 0.10% commissione reale Taker (Binance/Coinbase)
+FEE_PERCENTUALE = 0.001       # 0.10% commissione reale Taker
 MAX_DAILY_DRAWDOWN_PCT = 5.0  
 
 # ==================== GESTIONE PORTAFOGLIO & BACKUP ====================
@@ -102,7 +102,6 @@ def ottieni_dati_coinbase():
                     df[col] = df[col].astype(float)
                 df['Datetime'] = pd.to_datetime(df['Time'], unit='s', utc=True)
                 
-                # Timeframe 15m simulato per trend macro
                 df_15m = df.set_index('Datetime').resample('15min').agg({
                     'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
                 }).dropna().reset_index()
@@ -184,7 +183,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, regime_me
                      color='black', fontsize=9, fontweight='bold',
                      bbox=dict(boxstyle='round,pad=0.25', fc='#f0f0f0', ec='#26a69a', alpha=0.9))
 
-        ax1.set_title(f'BTC-USD | Quant Bot (Regime: {regime_mercato})', color='black', fontsize=13, fontweight='bold', pad=12)
+        ax1.set_title(f'BTC-USD | Market Report (Regime: {regime_mercato})', color='black', fontsize=13, fontweight='bold', pad=12)
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#e0e0e0', linestyle=':', alpha=0.7)
         
@@ -197,7 +196,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, regime_me
         ax2.set_facecolor('#f4f4f4')
         ax2.axis('off')
         
-        info_testo = f" 📊  QUANT DASHBOARD\n • Prezzo: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}    |    • Regime: {regime_mercato}\n • Stato: {stato_testo}"
+        info_testo = f" 📊  MARKET DASHBOARD\n • Prezzo: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}    |    • Regime: {regime_mercato}\n • Stato: {stato_testo}"
         ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace',
                  verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
 
@@ -231,7 +230,7 @@ def invia_messaggio_telegram(testo, chart_path=None):
 
 # ==================== LOGICA PRINCIPALE DEL BOT ====================
 def esegui_bot():
-    print("Avvio esecuzione Quant Bot (Adaptive Regime & Volume Flow)...")
+    print("Avvio esecuzione Market Bot...")
     df = ottieni_dati_coinbase()
     if df is None or len(df) < 100:
         print("Dati insufficienti dalle API.")
@@ -241,8 +240,6 @@ def esegui_bot():
     df['ema_lenta'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['rsi'] = calcola_rsi(df['Close'], 14)
     df['atr'] = calcola_atr(df, 14)
-    
-    # Analisi Volumi (Media mobile dei volumi a 20 periodi)
     df['volume_ma'] = df['Volume'].rolling(window=20).mean()
 
     ultimo_prezzo = df['Close'].iloc[-1]
@@ -296,7 +293,6 @@ def esegui_bot():
 
     profitto_P_L = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
     
-    # Controllo Max Daily Drawdown
     valore_iniziale_giorno = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
     drawdown_giornaliero_pct = ((valore_iniziale_giorno - valore_totale_portafoglio) / valore_iniziale_giorno) * 100
     
@@ -323,9 +319,8 @@ def esegui_bot():
     tempo_ultima_op = portafoglio.get("ultima_operazione_time", 0)
     puoi_operare = (timestamp_attuale - tempo_ultima_op) >= 180
 
-    # --- 1. TAKE PROFIT DINAMICO IN BASE AL REGIME ---
+    # --- 1. TAKE PROFIT DINAMICO ---
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
-        # Se siamo in trend lasciamo correre di più (+1.5%), in range chiudiamo prima (+1.1%)
         soglia_profitto_richiesta = 1.5 if regime_mercato == "TREND (Direzionale)" else 1.1
         condizione_take_profit = (profitto_P_L >= soglia_profitto_richiesta) or (rsi_attuale > 74)
         
@@ -344,7 +339,7 @@ def esegui_bot():
             portafoglio["ultima_operazione_time"] = timestamp_attuale
             
             messaggio_notifica = (
-                f"🚀 *TAKE PROFIT QUANT ({regime_mercato})* 🚀\n\n"
+                f"🚀 *TAKE PROFIT ESEGUITO ({regime_mercato})* 🚀\n\n"
                 f"• Lotto chiuso: #{lotto_da_vendere['id']}\n"
                 f"• Prezzo Vendita: ${ultimo_prezzo:,.2f}\n"
                 f"• Profitto Netto Reale: ${profitto_lotto:+,.2f} USD ({profitto_P_L:+.2f}%)\n"
@@ -395,7 +390,7 @@ def esegui_bot():
                 "motivazione": "Stop Lockdown Quant"
             })
 
-    # --- 3. INGRESSI CON FILTRI QUANTITATIVI (RSI + Volume Flow + Macro) ---
+    # --- 3. INGRESSI CON FILTRI QUANTITATIVI ---
     if puoi_operare and not azione_eseguita and not blocco_attivo_drawdown:
         saldo_corrente = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
         
@@ -408,7 +403,6 @@ def esegui_bot():
 
         capitale_lotto_dinamico = CAPITALE_PER_LOTTO * fattore_size
 
-        # Filtro Volume: confermiamo l'interesse di mercato se il volume è almeno il 70% della media o c'è forte ipervenduto
         volume_confermato = volume_attuale >= (volume_medio * 0.7)
         condizione_rsi_scarico = rsi_attuale < 35
         trend_macro_ok = ultimo_prezzo > ema_macro_15m
@@ -435,7 +429,7 @@ def esegui_bot():
                 motivo_ingresso = f"Ingresso Quant ({regime_mercato} + Volumi OK)"
                 
                 messaggio_notifica = (
-                    f"🟢 *APERTURA LOTTO QUANT (#1/{MAX_LOTTI})* 🟢\n\n"
+                    f"🟢 *APERTURA LOTTO (#1/{MAX_LOTTI})* 🟢\n\n"
                     f"• Prezzo Entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Spesa (fee incluse): ${costo_totale_con_fee:,.2f} USD\n"
                     f"• Quantità: {quantita:.5f} BTC\n"
@@ -497,11 +491,25 @@ def esegui_bot():
                         "motivazione": "Incremento ATR Dinamico"
                     })
 
-    # --- REPORT PERIODICO ---
+    # --- REPORT PERIODICO (REPORT DI MERCATO) ---
     tempo_ultimo_report = portafoglio.get("ultimo_report_time", 0)
     puoi_inviare_report = (timestamp_attuale - tempo_ultimo_report) >= 50
 
-    if not azione_eseguita and puoi_invia_report:
+    if not azione_eseguita and puoi_inviare_report:
+        # Definizione della strategia corrente in base al regime
+        if regime_mercato == "TREND (Direzionale)":
+            strategia_desc = "Trend-Following (Inseguimento della direzione principale con target allargati)"
+        else:
+            strategia_desc = "Mean-Reversion / Range Trading (Cattura dei rimbalzi stretti sui supporti locali)"
+
+        # Previsione analitica del bot basata su RSI e Volatilità
+        if rsi_attuale < 40:
+            previsione_mercato = "Fase di possibile esaurimento della pressione di vendita; probabile tentativo di rimbalzo tecnico a breve verso le resistenze."
+        elif rsi_attuale > 65:
+            previsione_mercato = "Area di potenziale ipercomprato; il prezzo potrebbe rallentare o subire una leggera correzione laterale prima di nuovi tentativi."
+        else:
+            previsione_mercato = "Mercato in perfetto equilibrio; attesa di una spinta di volume per determinare la prossima direzione di breve."
+
         motivo_attesa = f"Mercato in fase {regime_mercato} (RSI: {rsi_attuale:.1f})."
         if lotti_attivi > 0:
             motivo_attesa = f"Posizione attiva al {profitto_P_L:+.2f}% (Regime: {regime_mercato})."
@@ -515,12 +523,14 @@ def esegui_bot():
             )
 
         messaggio_notifica = (
-            f"📈 *REPORT QUANT BOT* 📈\n\n"
+            f"📈 *REPORT DI MERCATO* 📈\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n"
             f"• Regime: {regime_mercato}\n"
             f"• RSI: {rsi_attuale:.1f} | ATR: ${atr_attuale:.2f}\n\n"
             f"{dettagli_posizioni}"
-            f"• Stato: {motivo_attesa}"
+            f"🛠 *Strategia in uso:*\n{strategia_desc}\n\n"
+            f"🔮 *Previsione Grafico:*\n{previsione_mercato}\n\n"
+            f"• Stato Bot: {motivo_attesa}"
         )
         portafoglio["ultimo_report_time"] = timestamp_attuale
         salva_portafoglio(portafoglio)
