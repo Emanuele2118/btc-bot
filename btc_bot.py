@@ -101,10 +101,10 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO CRISTALLINA ====================
+# ==================== GENERAZIONE GRAFICO STILE ORIGINALE ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_correnti, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
-        fig, ax1 = plt.subplots(figsize=(12, 7), facecolor='white')
+        fig, ax1 = plt.subplots(figsize=(12, 8), facecolor='white')
         ax1.set_facecolor('white')
         
         dati_plot = df.tail(35).copy().reset_index(drop=True)
@@ -117,55 +117,56 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             h = dati_plot['High'].iloc[i]
             l = dati_plot['Low'].iloc[i]
             
-            colore = '#00b0ff' if c >= o else '#ff1744'
+            colore = '#00b0ff' if c >= o else '#7b1fa2' # Azzurro e viola scuro come nello stile originale
             
-            ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1.5, zorder=1)
+            ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1.2, zorder=1)
             bottom = min(o, c)
             height = abs(c - o) if abs(c - o) > 0 else 0.5
             ax1.bar(x_nums[i], height, bottom=bottom, color=colore, width=0.0006, zorder=2)
 
-        ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9', color='#ff9100', linewidth=2, linestyle='--')
-        ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50', color='#651fff', linewidth=2, linestyle='--')
+        ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#ffb300', linewidth=1.8, linestyle='--')
+        ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3f51b5', linewidth=1.8, linestyle='--')
         
         if prezzo_medio > 0:
-            ax1.axhline(y=prezzo_medio, color='#00e676', linestyle='-.', linewidth=2, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
+            ax1.axhline(y=prezzo_medio, color='#00e676', linestyle='-.', linewidth=1.8, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
             prezzo_sl = prezzo_medio * (1 + (stop_loss_perc / 100.0))
             colore_sl = '#00e676' if stop_loss_perc >= 0 else '#d50000'
-            ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=2, alpha=0.9, label=f'Stop/Lock ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}')
+            ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=1.8, alpha=0.9, label=f'Stop/Lock ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}')
 
         if lotti_correnti:
             for lotto in lotti_correnti:
                 p_entrata = lotto.get("prezzo_entrata")
                 id_lotto = lotto.get("id")
                 ax1.axhline(y=p_entrata, color='#ffd600', linestyle=':', alpha=0.8, linewidth=1.5)
-                ax1.text(x_nums[1], p_entrata, f' LOTTO #{id_lotto} (${p_entrata:,.2f})', color='#ffab00', fontsize=9, fontweight='bold', va='bottom')
+                ax1.text(x_nums[1], p_entrata, f' LOTTO #{id_lotto} (${p_entrata:,.2f})', color='#ff8f00', fontsize=9, fontweight='bold', va='bottom')
 
         ultimo_x = x_nums[-1]
-        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00b0ff', s=80, zorder=5)
+        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00b0ff', s=70, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
                      xy=(ultimo_x, prezzo_attuale), 
-                     xytext=(-80, 20), textcoords='offset points',
-                     color='black', fontsize=10, fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.4', fc='#ffffff', ec='#00b0ff', alpha=0.95))
+                     xytext=(-75, 15), textcoords='offset points',
+                     color='black', fontsize=9.5, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.3', fc='#ffffff', ec='#00b0ff', alpha=0.95))
 
-        ax1.set_title('BTC-USD | Profit Maximizer & Partial Take Profit (1m)', color='black', fontsize=14, fontweight='bold', pad=15)
-        ax1.tick_params(colors='black', labelsize=10)
-        ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.7)
+        ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='black', fontsize=13, fontweight='bold', pad=15)
+        ax1.tick_params(colors='black', labelsize=9.5)
+        ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.6)
         
         ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=5))
+        ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=7))
         fig.autofmt_xdate(rotation=0, ha='center')
         
         for spine in ax1.spines.values():
             spine.set_color('#b0bec5')
             
-        ax1.legend(loc='upper left', facecolor='#f5f5f5', edgecolor='#b0bec5', labelcolor='black', fontsize=9, framealpha=0.95)
+        ax1.legend(loc='upper left', facecolor='#f9f9f9', edgecolor='#b0bec5', labelcolor='black', fontsize=8.5, framealpha=0.95)
 
-        props = dict(boxstyle='round,pad=0.8', fc='#eceff1', ec='#b0bec5', alpha=0.95)
-        info_testo = f"PROFIT MAXIMIZER (1m):\n• Prezzo: ${prezzo_attuale:,.2f}   |   RSI: {rsi_attuale:.1f}\n• {stato_testo}"
-        ax1.text(0.02, 0.02, info_testo, transform=ax1.transAxes, fontsize=9.5, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
+        # Pannello di controllo posizionato in basso a sinistra esattamente come nell'immagine di riferimento
+        props = dict(boxstyle='square,pad=0.6', fc='#eceff1', ec='#b0bec5', alpha=0.95)
+        info_testo = f"📌  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n• Prezzo Corrente: ${prezzo_attuale:,.2f}   |   • RSI: {rsi_attuale:.1f}\n• Stato Operativo: {stato_testo}"
+        ax1.text(0.01, 0.02, info_testo, transform=ax1.transAxes, fontsize=9, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
 
-        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.20, left=0.08, right=0.97, top=0.92)
         chart_path = 'temp_chart.png'
         plt.savefig(chart_path, dpi=160, facecolor='white', edgecolor='none')
         plt.close()
@@ -193,7 +194,7 @@ def invia_messaggio_telegram(testo, chart_path=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# ==================== LOGICA PRINCIPALE (PROFIT MAXIMIZER & VENDITE PARZIALI) ====================
+# ==================== LOGICA PRINCIPALE ====================
 def esegui_bot():
     print("Avvio esecuzione bot Profit Maximizer (1m)...")
     df = ottieni_dati_binance()
@@ -220,7 +221,7 @@ def esegui_bot():
 
     profitto_P_L = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
     
-    stop_loss_effettivo_perc = -2.5 
+    stop_loss_effettivo_perc = -2.0 
     if lotti_attivi > 0 and prezzo_medio > 0:
         if profitto_P_L > 2.0:
             stop_loss_effettivo_perc = +1.0 
@@ -231,10 +232,8 @@ def esegui_bot():
     messaggio_notifica = ""
     stato_dashboard = f"Posizioni attive ({lotti_attivi}/{MAX_LOTTI}) | P&L: {profitto_P_L:+.2f}% | SL: {stop_loss_effettivo_perc:+.1f}%"
 
-    # --- 1. GESTIONE VENDITE PARZIALI (TAKE PROFIT INCREMENTALE) ---
-    # Se abbiamo più lotti e il mercato sale, vendiamo prima il lotto più costoso/vecchio per incassare profitto e liberare capitale
+    # --- 1. GESTIONE VENDITE PARZIALI ---
     if lotti_attivi > 1 and profitto_P_L >= 1.5:
-        # Ordiniamo i lotti per prezzo d'entrata (dal più alto al più basso per liberare prima le posizioni meno vantaggiose)
         lotti_ordinati = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)
         lotto_da_vendere = lotti_ordinati[0]
         
@@ -248,14 +247,14 @@ def esegui_bot():
         messaggio_notifica = (
             f"🎯 *VENDITA PARZIALE TAKE PROFIT (Lotto #{lotto_da_vendere['id']})* 🎯\n\n"
             f"• Prezzo Vendita: ${ultimo_prezzo:,.2f}\n"
-            f"• Profitto realizzato sul lotto: ${profitto_lotto:+,.2f} ({((ultimo_prezzo/lotto_da_vendere['prezzo_entrata'])-1)*100:+.2f}%)\n"
+            f"• Profitto realizzato: ${profitto_lotto:+,.2f} ({((ultimo_prezzo/lotto_da_vendere['prezzo_entrata'])-1)*100:+.2f}%)\n"
             f"• Saldo USD Aggiornato: ${portafoglio['saldo_usd']:,.2f}\n"
-            f"• Lotti rimanenti attivi: {len(portafoglio['lotti'])}/{MAX_LOTTI}"
+            f"• Lotti rimanenti: {len(portafoglio['lotti'])}/{MAX_LOTTI}"
         )
         azione_eseguita = True
         salva_portafoglio(portafoglio)
 
-    # --- 2. CONTROLLO USCITA TOTALE (STOP LOSS / LOCKDOWN) ---
+    # --- 2. CONTROLLO USCITA TOTALE ---
     if not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
         soglia_sl_prezzo = prezzo_medio * (1 + (stop_loss_effettivo_perc / 100.0))
         if ultimo_prezzo <= soglia_sl_prezzo:
@@ -275,11 +274,10 @@ def esegui_bot():
             azione_eseguita = True
             salva_portafoglio(portafoglio)
 
-    # --- 3. CONTROLLO INGRESSO (DCA DINAMICA BASATA SU ATR) ---
+    # --- 3. CONTROLLO INGRESSO ---
     if not azione_eseguita:
         saldo_corrente = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
         
-        # Primo lotto: RSI basso o trend a favore
         if lotti_attivi == 0 and (rsi_attuale < 38 or df['ema_veloce'].iloc[-1] > df['ema_lenta'].iloc[-1]):
             if saldo_corrente >= CAPITALE_PER_LOTTO:
                 quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
@@ -297,16 +295,13 @@ def esegui_bot():
                     f"🟢 *APERTURA PRIMO LOTTO (#1/{MAX_LOTTI})* 🟢\n\n"
                     f"• Prezzo Entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Quantità: {quantita:.5f} BTC\n"
-                    f"• Condizione: RSI a {rsi_attuale:.1f} / Trend EMA favorevole.\n"
-                    f"• Saldo USD Residuo: ${portafoglio['saldo_usd']:,.2f}"
+                    f"• RSI: {rsi_attuale:.1f} | Saldo USD: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
 
-        # Lotti successivi (fino a 4): calcolati dinamicamente usando l'ATR per ottimizzare la mediazione al ribasso
         elif 0 < lotti_attivi < MAX_LOTTI and prezzo_medio > 0:
             ultimo_lotto_prezzo = lotti[-1]['prezzo_entrata']
-            # Distanza dinamica basata sulla volatilità ATR (es. almeno 1.2 volte l'ATR di distanza dall'ultimo acquisto)
             distanza_richiesta_atr = atr_attuale * 1.2
             
             if ultimo_prezzo <= (ultimo_lotto_prezzo - distanza_richiesta_atr):
@@ -330,25 +325,24 @@ def esegui_bot():
                     messaggio_notifica = (
                         f"🟢 *INCREMENTO POSIZIONE: LOTTO (#{nuovo_id}/{MAX_LOTTI})* 🟢\n\n"
                         f"• Prezzo Ingresso: ${ultimo_prezzo:,.2f}\n"
-                        f"• Motivo: Ribasso protetto dalla volatilità ATR (${distanza_richiesta_atr:,.2f} di distanza).\n"
                         f"• Nuovo Prezzo Medio: ${prezzo_medio:,.2f}\n"
-                        f"• Saldo USD Residuo: ${portafoglio['saldo_usd']:,.2f}"
+                        f"• Saldo USD: ${portafoglio['saldo_usd']:,.2f}"
                     )
                     azione_eseguita = True
                     salva_portafoglio(portafoglio)
 
     # --- REPORT DI ATTESA E MONITORAGGIO ---
     if not azione_eseguita:
-        motivo_attesa = f"RSI attuale ({rsi_attuale:.1f}) in attesa di zone di ipervenduto o pullback ottimale."
+        motivo_attesa = f"RSI attuale ({rsi_attuale:.1f}) in attesa di condizioni ottimali."
         if lotti_attivi > 0:
-            motivo_attesa = f"In attesa di target per vendite parziali o ribasso sufficiente (ATR: ${atr_attuale:.2f}) per il lotto successivo."
+            motivo_attesa = f"In attesa di target profitto o ribasso ATR (${atr_attuale:.2f})."
 
         dettagli_posizioni = ""
         if lotti_attivi > 0:
             dettagli_posizioni = (
                 f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI} lotti\n"
-                f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
-                f"• Performance netta: {profitto_P_L:+.2f}%\n"
+                f"• Prezzo medio: ${prezzo_medio:,.2f}\n"
+                f"• Performance: {profitto_P_L:+.2f}%\n"
             )
 
         messaggio_notifica = (
@@ -361,7 +355,7 @@ def esegui_bot():
 
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, portafoglio.get("lotti", []), prezzo_medio, stop_loss_effettivo_perc)
     invia_messaggio_telegram(messaggio_notifica, chart_path)
-    print("Report Profit Maximizer inviato con successo su Telegram.")
+    print("Report inviato con successo su Telegram.")
 
 if __name__ == "__main__":
     esegui_bot()
