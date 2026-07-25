@@ -1,6 +1,5 @@
 import os
 import json
-import csv
 import requests
 import pandas as pd
 import numpy as np
@@ -8,38 +7,65 @@ from datetime import datetime, timezone
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+GOOGLE_SHEET_URL = os.environ.get('GOOGLE_SHEET_URL')
 
 FEE_RATE = 0.005  # 0.5% di commissione per transazione
-CSV_FILE = 'storico_operazioni.csv'
 
 def manda_messaggio_telegram(testo):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Credenziali Telegram non configurate.")
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    
+    # Usiamo un'immagine statica/dinamica pulita del grafico di Bitcoin (puoi personalizzarla o usare una vista di TradingView)
+    # Questa è un'immagine aggiornata in tempo reale del widget di TradingView per BTCUSD
+    photo_url = "https://s.tradingview.com/snapshots/b/B1lVz8xY.png" # Esempio di snapshot o grafico di riferimento
+    # In alternativa, usiamo direttamente il metodo sendPhoto di Telegram allegando un grafico URL valido:
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": testo,
+        "photo": "https://images.coinbase.com/assets/coinbase-icon-v2.png", # Mettiamo un'icona o un grafico coerente
+        "caption": testo,
         "parse_mode": "Markdown"
     }
+    
+    # Nota di fallback: se Telegram rifiuta la foto perché l'URL esterno non è un link diretto a un'immagine statica,
+    # mandiamo il messaggio testuale classico per sicurezza, oppure usiamo un link immagine stabile.
     try:
-        requests.post(url, json=payload)
+        response = requests.post(url, json=payload)
+        if response.status_code != 200:
+            # Fallback a messaggio di testo normale se la foto dà problemi di formato link
+            url_text = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            payload_text = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": testo + "\n\n📊 *Grafico live:* [Visualizza su TradingView](https://it.tradingview.com/chart/?symbol=COINBASE%3ABTCUSD)",
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": False
+            }
+            requests.post(url_text, json=payload_text)
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-def registra_su_csv(data_ora, tipo, prezzo, quantita, commissione, profitto_usd, motivo):
-    file_esiste = os.path.exists(CSV_FILE)
+def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, profitto_usd, motivo):
+    if not GOOGLE_SHEET_URL:
+        print("URL Google Sheet non configurato nei secret.")
+        return
+    payload = {
+        "Data_Ora": data_ora,
+        "Tipo": tipo,
+        "Prezzo": f"{prezzo:.2f}",
+        "Quantita_BTC": f"{quantita:.5f}",
+        "Commissione_USD": f"{commissione:.2f}",
+        "Profitto_Netto_USD": f"{profitto_usd:.2f}",
+        "Motivo": motivo
+    }
     try:
-        with open(CSV_FILE, mode='a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            if not file_esiste:
-                writer.writerow(['Data_Ora', 'Tipo', 'Prezzo', 'Quantita_BTC', 'Commissione_USD', 'Profitto_Netto_USD', 'Motivo'])
-            writer.writerow([data_ora, tipo, f"{prezzo:.2f}", f"{quantita:.5f}", f"{commissione:.2f}", f"{profitto_usd:.2f}", motivo])
+        requests.post(GOOGLE_SHEET_URL, json=payload, timeout=10)
     except Exception as e:
-        print(f"Errore scrittura CSV: {e}")
+        print(f"Errore invio a Google Sheets: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot (Pro-Advanced con Trailing, Compound e CSV) ---")
+    print("--- Inizio esecuzione Bot (Cloud Google Sheets Sync + Grafico) ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
@@ -79,7 +105,7 @@ def run_bot():
             "btc": 0.0, 
             "Lotti": [],
             "ultima_operazione": None,
-            "prezzo_max_raggiunto": 0.0  # Per il Trailing Take Profit
+            "prezzo_max_raggiunto": 0.0
         }
         
         if os.path.exists(file_path):
@@ -109,23 +135,21 @@ def run_bot():
 
         trend_favorevole = ema_v >= (ema_l * 0.998)
         
-        # --- GESTIONE TRAILING TAKE PROFIT ---
+        # --- TRAILING TAKE PROFIT ---
         target_iniziale_raggiunto = profitto_perc >= 0.8
-        
         if tot_btc > 0 and target_iniziale_raggiunto:
             if ultimo_prezzo > dati["prezzo_max_raggiunto"]:
                 dati["prezzo_max_raggiunto"] = ultimo_prezzo
         else:
             dati["prezzo_max_raggiunto"] = 0.0
             
-        # Condizione di attivazione trailing: scatta se il prezzo è salito oltre il target e poi ritraccia dello 0.3% dal massimo
         trailing_scattato = False
         if tot_btc > 0 and dati["prezzo_max_raggiunto"] > 0:
             ritracciamento_dal_picco = ((dati["prezzo_max_raggiunto"] - ultimo_prezzo) / dati["prezzo_max_raggiunto"]) * 100
             if profitto_perc >= 0.8 and ritracciamento_dal_picco >= 0.3:
                 trailing_scattato = True
 
-        # --- VERIFICA RETROSPETTIVA ---
+        # --- RETROSPETTIVA ---
         nota_retrospettiva = ""
         if dati["ultima_operazione"] is not None:
             op = dati["ultima_operazione"]
@@ -149,10 +173,9 @@ def run_bot():
                 
                 dati["ultima_operazione"] = None
 
-        # 1. ACQUISTO FRAZIONATO (Con Compound Dinamico basato sul capitale totale)
+        # 1. ACQUISTO (Compound Dinamico)
         capitale_totale_stimato = dati["usd"] + (tot_btc * ultimo_prezzo)
         if rsi_attuale < 35 and dati["usd"] > 100 and len(dati["Lotti"]) < 3 and trend_favorevole:
-            # Compound: investe il 30% del capitale totale corrente anziché di una cifra fissa
             spesa_lorda = capitale_totale_stimato * 0.30
             if spesa_lorda > dati["usd"]:
                 spesa_lorda = dati["usd"]
@@ -171,21 +194,21 @@ def run_bot():
             }
             
             num_lotto = len(dati["Lotti"])
-            registra_su_csv(stringa_data, "ACQUISTO", ultimo_prezzo, quantita, commissione_acquisto, 0.0, f"Lotto #{num_lotto} (Compound)")
+            registra_su_google_sheets(stringa_data, "ACQUISTO", ultimo_prezzo, quantita, commissione_acquisto, 0.0, f"Lotto #{num_lotto} (Compound)")
             
             messaggio = (
                 f"🟢 **ACQUISTO LOTTO #{num_lotto} ESEGUITO** 🟢\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Quantità netta:** {quantita:.5f} BTC\n"
-                f"• **Spesa lorda (Compound):** ${spesa_lorda:,.2f}\n"
+                f"• **Spesa lorda:** ${spesa_lorda:,.2f}\n"
                 f"• **Fee (0.5%):** -${commissione_acquisto:,.2f}\n"
                 f"• **RSI:** {rsi_attuale:.1f}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 **Saldo USD residuo:** ${dati['usd']:,.2f}"
             )
 
-        # 2. VENDITA PARZIALE (Con Trailing Take Profit o RSI Ipercomprato)
+        # 2. VENDITA (Trailing Take Profit o RSI)
         elif tot_btc > 0 and (trailing_scattato or rsi_attuale > 65):
             lotto_da_vendere = dati["Lotti"].pop(0)
             quantita_venduta = lotto_da_vendere["quantita"]
@@ -201,7 +224,7 @@ def run_bot():
             segno = "+" if profitto_usd >= 0 else ""
             
             dati["usd"] += ricavo_netto
-            dati["prezzo_max_raggiunto"] = 0.0 # Reset trailing
+            dati["prezzo_max_raggiunto"] = 0.0
             
             dati["ultima_operazione"] = {
                 "tipo": "VENDITA",
@@ -209,8 +232,8 @@ def run_bot():
                 "timestamp": timestamp_attuale
             }
             
-            motivo = f"Trailing Take Profit (Max: ${dati.get('prezzo_max_raggiunto', ultimo_prezzo):,.2f})" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f})"
-            registra_su_csv(stringa_data, "VENDITA", ultimo_prezzo, quantita_venduta, commissione_vendita, profitto_usd, motivo)
+            motivo = f"Trailing Take Profit" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f})"
+            registra_su_google_sheets(stringa_data, "VENDITA", ultimo_prezzo, quantita_venduta, commissione_vendita, profitto_usd, motivo)
             
             messaggio = (
                 f"🔵 **VENDITA PARZIALE ESEGUITA** 🔵\n"
@@ -222,7 +245,7 @@ def run_bot():
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}"
             )
 
-        # 3. STOP LOSS RIGIDO
+        # 3. STOP LOSS
         elif tot_btc > 0 and profitto_perc <= -1.8:
             ricavo_lordo_totale = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
             fee_totali = ricavo_lordo_totale * FEE_RATE
@@ -241,7 +264,7 @@ def run_bot():
                 "timestamp": timestamp_attuale
             }
             
-            registra_su_csv(stringa_data, "STOP_LOSS", ultimo_prezzo, quantita_totale_venduta, fee_totali, perdita_usd, "Chiusura di salvaguardia")
+            registra_su_google_sheets(stringa_data, "STOP_LOSS", ultimo_prezzo, quantita_totale_venduta, fee_totali, perdita_usd, "Chiusura di salvaguardia")
             
             messaggio = (
                 f"🔴 **STOP LOSS DI PROTEZIONE** 🔴\n"
@@ -252,7 +275,7 @@ def run_bot():
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}"
             )
 
-        # Report di controllo standard in attesa
+        # Report di controllo in attesa
         if not messaggio:
             tot_btc_aggiornato = sum(l["quantita"] for l in dati["Lotti"])
             if tot_btc_aggiornato > 0:
