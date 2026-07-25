@@ -526,13 +526,8 @@ def esegui_bot():
         invia_messaggio_telegram(messaggio_notifica, chart_path)
 
 if __name__ == "__main__":
-    # Avvia l'ascoltatore dei comandi Telegram in background (solo monitoraggio/emergenza)
-    threading.Thread(target=gestisci_comandi_telegram, daemon=True).start()
-    
-    # Loop principale del bot (verifica ogni 60 secondi)
-    while True:
-        try:
-            esegui_bot()
-        except Exception as e:
-            print(f"Errore nel ciclo principale: {e}")
-        time.sleep(60)
+    # Esegue il controllo una sola volta per ogni esecuzione di GitHub Actions
+    try:
+        esegui_bot()
+    except Exception as e:
+        print(f"Errore nell'esecuzione: {e}")
