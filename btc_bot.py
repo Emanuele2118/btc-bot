@@ -330,13 +330,26 @@ def esegui_bot():
     tempo_ultima_op = portafoglio.get("ultima_operazione_time", 0)
     puoi_operare = (timestamp_attuale - tempo_ultima_op) >= 180
 
-    # --- 1. TAKE PROFIT DINAMICO ---
+    # --- 1. TAKE PROFIT DINAMICO (CON VERIFICA COMMISSIONI REALI) ---
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
+        lotti_ordinati = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)
+        lotto_da_vendere = lotti_ordinati[0]
+        
+        # Simula ricavi, commissioni di vendita e profitto netto in dollari
+        ricavo_lordo_simulato = lotto_da_vendere['quantita'] * ultimo_prezzo
+        fee_vendita_simulata = ricavo_lordo_simulato * FEE_PERCENTUALE
+        ricavo_netto_simulato = ricavo_lordo_simulato - fee_vendita_simulata
+        profitto_netto_dollari = ricavo_netto_simulato - lotto_da_vendere['spesa']
+        
+        # Calcola la percentuale di profitto REALE netta (ripulita da fee ingresso/uscita)
+        profitto_netto_perc = (profitto_netto_dollari / lotto_da_vendere['spesa']) * 100
+
         soglia_profitto_richiesta = 1.5 if regime_mercato == "TREND (Direzionale)" else 1.1
-        if (profitto_P_L >= soglia_profitto_richiesta) or (rsi_attuale > 74):
-            lotti_ordinati = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)
-            lotto_da_vendere = lotti_ordinati[0]
-            
+        
+        # Il bot chiuderà solo se la percentuale NETTA supera la soglia O se l'RSI è in ipercomprato MA con profitto netto positivo in dollari
+        condizione_TP_valida = (profitto_netto_perc >= soglia_profitto_richiesta) or ((rsi_attuale > 74) and (profitto_netto_dollari > 0))
+
+        if condizione_TP_valida:
             ricavo_lordo = lotto_da_vendere['quantita'] * ultimo_prezzo
             fee_vendita = ricavo_lordo * FEE_PERCENTUALE
             ricavo_netto = ricavo_lordo - fee_vendita
@@ -350,7 +363,7 @@ def esegui_bot():
             messaggio_notifica = (
                 f"🚀 *TAKE PROFIT ESEGUITO ({regime_mercato})* 🚀\n\n"
                 f"• Lotto chiuso: #{lotto_da_vendere['id']}\n"
-                f"• Profitto Netto: ${profitto_lotto:+,.2f} USD ({profitto_P_L:+.2f}%)\n"
+                f"• Profitto Netto: ${profitto_lotto:+,.2f} USD ({profitto_netto_perc:+.2f}% netto)\n"
                 f"• Saldo USD: ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
