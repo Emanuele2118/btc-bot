@@ -23,18 +23,17 @@ def manda_messaggio_telegram(testo):
         print(f"Errore invio Telegram: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot Formativo (Coinbase Live) ---")
+    print("--- Inizio esecuzione Bot Formativo (Coinbase Live - 1m) ---")
     
     try:
-        # Scarichiamo le candele storiche a 15 minuti da Coinbase Exchange API
-        url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=900"
+        # Scarichiamo le candele storiche a 1 minuto da Coinbase Exchange API (granularity=60)
+        url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url_coinbase, headers=headers, timeout=10)
         
         if response.status_code == 200:
             raw_data = response.json()
-            # Coinbase restituisce un array di array: [time, low, high, open, close, volume]
-            # Ordinati dal più recente al meno recente, quindi li invertiamo per averli cronologici
+            # Invertiamo per avere i dati in ordine cronologico (dal più vecchio al più recente)
             raw_data.reverse()
             
             df = pd.DataFrame(raw_data, columns=['Time', 'Low', 'High', 'Open', 'Close', 'Volume'])
@@ -45,7 +44,7 @@ def run_bot():
 
         ultimo_prezzo = float(df['Close'].iloc[-1])
         
-        # Indicatori Tecnici
+        # Indicatori Tecnici (calcolati sul time-frame a 1 minuto)
         df['ema_fast'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['ema_slow'] = df['Close'].ewm(span=21, adjust=False).mean()
         
@@ -66,7 +65,7 @@ def run_bot():
         rsi_attuale = float(df['rsi'].iloc[-1])
         atr_attuale = float(df['atr'].iloc[-1])
         
-        print(f"Prezzo BTC (Coinbase): ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f} | EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f}")
+        print(f"Prezzo BTC (Coinbase 1m): ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f} | EMA Veloce: {ema_veloce:.2f} | EMA Lenta: {ema_lenta:.2f}")
         
         # Gestione portafoglio virtuale
         file_path = 'portfolio.json'
@@ -109,13 +108,13 @@ def run_bot():
             dati["prezzo_acquisto"] = ultimo_prezzo
             
             messaggio = (
-                f"🟢 **ACQUISTO ESEGUITO** 🟢\n"
+                f"🟢 **ACQUISTO ESEGUITO (1m)** 🟢\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Quantità:** {quantita:.5f} BTC\n"
                 f"• **Spesa:** ${spesa:,.2f}{bonus_testo}\n\n"
                 f"📊 **Perché ho comprato?**\n"
-                f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è sopra l'EMA lenta (`{ema_lenta:.1f}`): **trend rialzista**.\n"
+                f"🔹 L'EMA veloce (`{ema_veloce:.1f}`) è sopra l'EMA lenta (`{ema_lenta:.1f}`): **trend rialzista a 1m**.\n"
                 f"🔹 L'RSI (`{rsi_attuale:.1f}`) è sotto 75.\n\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
@@ -135,7 +134,7 @@ def run_bot():
             dati["prezzo_acquisto"] = 0.0
             
             messaggio = (
-                f"🔴 **VENDITA CHIUSA** 🔴\n"
+                f"🔴 **VENDITA CHIUSA (1m)** 🔴\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo uscita:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Profitto/Perdita:** {segno}${profitto_usd:,.2f} ({segno}{perc_operazione:.2f}%)\n\n"
@@ -162,17 +161,17 @@ def run_bot():
                 )
             else:
                 if ema_veloce <= ema_lenta:
-                    motivo = f"⏳ **In attesa (Trend ribassista)**\nL'EMA veloce ({ema_veloce:.1f}) è sotto l'EMA lenta ({ema_lenta:.1f})."
+                    motivo = f"⏳ **In attesa (Trend ribassista 1m)**\nL'EMA veloce ({ema_veloce:.1f}) è sotto l'EMA lenta ({ema_lenta:.1f})."
                 elif rsi_attuale >= 75:
                     motivo = f"⚠️ **In attesa (Mercato in ipercomprato)**\nL'RSI è a {rsi_attuale:.1f}."
                 else:
-                    motivo = "🔍 **In attesa di condizioni ottimali**\nIl mercato sta consolidando."
+                    motivo = "🔍 **In attesa di condizioni ottimali**\nIl mercato sta oscillando."
 
             messaggio = (
-                f"🛡️ **REPORT DI CONTROLLO** 🛡️\n"
+                f"🛡️ **REPORT DI CONTROLLO (1m)** 🛡️\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo BTC:** ${ultimo_prezzo:,.2f}\n"
-                f"• **RSI (15m):** {rsi_attuale:.1f}\n\n"
+                f"• **RSI (1m):** {rsi_attuale:.1f}\n\n"
                 f"📌 **Stato attuale:**\n{motivo}"
             )
 
