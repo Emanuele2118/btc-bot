@@ -26,7 +26,7 @@ def manda_messaggio_telegram(testo):
         print(f"Errore invio Telegram: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot Pro-Ready con Retrospettiva ---")
+    print("--- Inizio esecuzione Bot (Frazionato e Con Commissioni) ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
@@ -65,7 +65,7 @@ def run_bot():
             "btc": 0.0, 
             "prezzo_acquisto": 0.0,
             "Lotti": [],
-            "ultima_operazione": None # Struttura per tracciare l'orario e il prezzo dell'ultima mossa
+            "ultima_operazione": None
         }
         
         if os.path.exists(file_path):
@@ -93,13 +93,12 @@ def run_bot():
 
         trend_favorevole = ema_v >= (ema_l * 0.998)
         
-        # --- VERIFICA RETROSPETTIVA (Analisi a posteriori dell'operazione precedente) ---
+        # --- VERIFICA RETROSPETTIVA ---
         nota_retrospettiva = ""
         if dati["ultima_operazione"] is not None:
             op = dati["ultima_operazione"]
             tempo_trascorso_minuti = (timestamp_attuale - op["timestamp"]) / 60
             
-            # Controlliamo dopo almeno 5 minuti dall'ultima operazione
             if tempo_trascorso_minuti >= 5:
                 prezzo_operazione = op["prezzo"]
                 differenza_prezzo = ultimo_prezzo - prezzo_operazione
@@ -107,19 +106,18 @@ def run_bot():
                 
                 if op["tipo"] == "VENDITA":
                     if differenza_prezzo < 0:
-                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Ottimo timing! Ho venduto a ${prezzo_operazione:,.2f} e nei minuti successivi il grafico è sceso del {abs(perc_diff):.2f}%, evitando che la posizione perdesse valore."
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Ottimo timing! Ho venduto a ${prezzo_operazione:,.2f} e nei minuti successivi il grafico è sceso del {abs(perc_diff):.2f}%."
                     else:
-                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Il grafico ha continuato a salire (+{perc_diff:.2f}%) dopo la vendita. Uscita un po' anticipata."
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Il grafico ha continuato a salire (+{perc_diff:.2f}%) dopo la vendita."
                 elif op["tipo"] == "ACQUISTO":
                     if differenza_prezzo > 0:
-                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Intuizione corretta! Ho comprato a ${prezzo_operazione:,.2f} e il grafico è salito del +{perc_diff:.2f}%."
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Ottima intuizione! Ho comprato a ${prezzo_operazione:,.2f} e il grafico è salito del +{perc_diff:.2f}%."
                     else:
-                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Dopo l'acquisto il grafico è sceso temporaneamente del {perc_diff:.2f}%, testando la resistenza dei lotti."
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Dopo l'acquisto il grafico è sceso temporaneamente del {perc_diff:.2f}%."
                 
-                # Resettiamo l'ultima operazione analizzata per evitare ripetizioni continue
                 dati["ultima_operazione"] = None
 
-        # 1. ACQUISTO DINAMICO
+        # 1. ACQUISTO FRAZIONATO
         if rsi_attuale < 35 and dati["usd"] > 100 and len(dati["Lotti"]) < 3 and trend_favorevole:
             spesa_lorda = dati["usd"] * 0.30
             commissione_acquisto = spesa_lorda * FEE_RATE
@@ -130,7 +128,6 @@ def run_bot():
             dati["Lotti"].append({"quantita": quantita, "prezzo": ultimo_prezzo})
             dati["btc"] = sum(l.get("quantita", 0) for l in dati["Lotti"])
             
-            # Registriamo l'operazione per la retrospettiva futura
             dati["ultima_operazione"] = {
                 "tipo": "ACQUISTO",
                 "prezzo": ultimo_prezzo,
@@ -139,12 +136,12 @@ def run_bot():
             
             num_lotto = len(dati["Lotti"])
             messaggio = (
-                f"🟢 **ACQUISTO LOTTO #{num_lotto} (Pro-Ready)** 🟢\n"
+                f"🟢 **ACQUISTO LOTTO #{num_lotto} ESEGUITO** 🟢\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Quantità netta:** {quantita:.5f} BTC\n"
                 f"• **Spesa lorda:** ${spesa_lorda:,.2f}\n"
-                f"• **Fee:** -${commissione_acquisto:,.2f}\n"
+                f"• **Fee (0.5%):** -${commissione_acquisto:,.2f}\n"
                 f"• **RSI:** {rsi_attuale:.1f}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 **Saldo USD residuo:** ${dati['usd']:,.2f}"
@@ -177,7 +174,7 @@ def run_bot():
             motivo = f"Target profitto raggiunto (+{perc_lotto_netta:.2f}% netto)" if profitto_perc >= 0.8 else f"RSI ipercomprato ({rsi_attuale:.1f})"
             
             messaggio = (
-                f"🔵 **VENDITA PARZIALE NETTA (Pro-Ready)** 🔵\n"
+                f"🔵 **VENDITA PARZIALE ESEGUITA** 🔵\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo uscita:** ${ultimo_prezzo:,.2f}\n"
                 f"• **Profitto netto:** {segno}${profitto_usd:,.2f} ({segno}{perc_lotto_netta:.2f}%)\n"
@@ -213,7 +210,7 @@ def run_bot():
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}"
             )
 
-        # Report di controllo standard che include l'analisi retrospettiva se disponibile
+        # Report di controllo standard
         if not messaggio:
             if tot_btc > 0:
                 valore_attuale = tot_btc * ultimo_prezzo
@@ -229,7 +226,7 @@ def run_bot():
                 stato = f"⏳ **In attesa**\n• RSI: {rsi_attuale:.1f}\n• Filtro mercato: {filtro_stato}"
 
             messaggio = (
-                f"🛡️ **REPORT PRO-READY** 🛡️\n"
+                f"🛡️ **REPORT DI MERCATO** 🛡️\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo BTC:** ${ultimo_prezzo:,.2f}\n"
                 f"{nota_retrospettiva}\n\n"
