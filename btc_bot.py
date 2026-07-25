@@ -3,9 +3,12 @@ import json
 import requests
 import pandas as pd
 import numpy as np
+from datetime import datetime, timezone
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
+FEE_RATE = 0.005  # 0.5% di commissione
 
 def manda_messaggio_telegram(testo):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -23,7 +26,7 @@ def manda_messaggio_telegram(testo):
         print(f"Errore invio Telegram: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot Dinamico Frazionato (1m) ---")
+    print("--- Inizio esecuzione Bot Pro-Ready con Retrospettiva ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
@@ -41,8 +44,10 @@ def run_bot():
             return
 
         ultimo_prezzo = float(df['Close'].iloc[-1])
+        timestamp_attuale = int(datetime.now(timezone.utc).timestamp())
         
-        df['ema'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['ema_veloce'] = df['Close'].ewm(span=9, adjust=False).mean()
+        df['ema_lenta'] = df['Close'].ewm(span=50, adjust=False).mean()
         
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -50,18 +55,17 @@ def run_bot():
         rs = gain / loss
         df['rsi'] = 100 - (100 / (1 + rs))
         
-        ema_attuale = float(df['ema'].iloc[-1])
+        ema_v = float(df['ema_veloce'].iloc[-1])
+        ema_l = float(df['ema_lenta'].iloc[-1])
         rsi_attuale = float(df['rsi'].iloc[-1])
         
-        print(f"Prezzo BTC: ${ultimo_prezzo:.2f} | RSI: {rsi_attuale:.2f} | EMA: {ema_attuale:.2f}")
-        
         file_path = 'portfolio.json'
-        # Struttura dati avanzata per gestire acquisti multipli
         dati = {
             "usd": 10000.0, 
             "btc": 0.0, 
             "prezzo_acquisto": 0.0,
-            "Lotti": [] # Storico dei singoli lotti acquistati
+            "Lotti": [],
+            "ultima_operazione": None # Struttura per tracciare l'orario e il prezzo dell'ultima mossa
         }
         
         if os.path.exists(file_path):
@@ -70,15 +74,13 @@ def run_bot():
                     dati = json.load(f)
                     if "Lotti" not in dati:
                         dati["Lotti"] = []
-                        if dati["btc"] > 0 and dati["prezzo_acquisto"] > 0:
-                            # Retrocompatibilità se c'era già un vecchio lotto unico
-                            dati["Lotti"].append({"quantita": dati["btc"], "prezzo": dati["prezzo_acquisto"]})
+                    if "ultima_operazione" not in dati:
+                        dati["ultima_operazione"] = None
                 except:
                     pass
                     
         messaggio = None
         
-        # Calcoliamo il prezzo medio di carico ponderato
         tot_btc = sum(lotto["quantita"] for lotto in dati["Lotti"])
         prezzo_medio = 0.0
         if tot_btc > 0:
@@ -89,111 +91,149 @@ def run_bot():
         if tot_btc > 0 and prezzo_medio > 0:
             profitto_perc = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100
 
-        # --- LOGICA DINAMICA FRAZIONATA ---
+        trend_favorevole = ema_v >= (ema_l * 0.998)
         
-        # 1. ACQUISTO AGGIUNTIVO (Se l'RSI è in ipervenduto e abbiamo USD)
-        # Permette di comprare fino a un massimo di 4 lotti separati se il mercato scende a ondate
-        if rsi_attuale < 38 and dati["usd"] > 100 and len(dati["Lotti"]) < 4:
-            # Controlliamo anche che l'ultimo lotto non sia stato preso proprio allo stesso prezzo esatto (evita spam nello stesso minuto)
-            ultimo_prezzo_lotto = dati["Lotti"][-1]["prezzo"] if len(dati["Lotti"]) > 0 else 0
+        # --- VERIFICA RETROSPETTIVA (Analisi a posteriori dell'operazione precedente) ---
+        nota_retrospettiva = ""
+        if dati["ultima_operazione"] is not None:
+            op = dati["ultima_operazione"]
+            tempo_trascorso_minuti = (timestamp_attuale - op["timestamp"]) / 60
             
-            if ultimo_prezzo_lotto == 0 or abs(ultimo_prezzo_lotto - ultimo_prezzo) > (ultimo_prezzo * 0.001):
-                spesa = dati["usd"] * 0.25 # Impegna il 25% del capitale rimanente per questo lotto
-                quantita = spesa / ultimo_prezzo
+            # Controlliamo dopo almeno 5 minuti dall'ultima operazione
+            if tempo_trascorso_minuti >= 5:
+                prezzo_operazione = op["prezzo"]
+                differenza_prezzo = ultimo_prezzo - prezzo_operazione
+                perc_diff = (differenza_prezzo / prezzo_operazione) * 100
                 
-                dati["usd"] -= spesa
-                dati["Lotti"].append({"quantita": quantita, "prezzo": ultimo_prezzo})
-                dati["btc"] = sum(l.get("quantita", 0) for l in dati["Lotti"])
-                dati["prezzo_acquisto"] = prezzo_medio # Aggiornato per compattezza
+                if op["tipo"] == "VENDITA":
+                    if differenza_prezzo < 0:
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Ottimo timing! Ho venduto a ${prezzo_operazione:,.2f} e nei minuti successivi il grafico è sceso del {abs(perc_diff):.2f}%, evitando che la posizione perdesse valore."
+                    else:
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Il grafico ha continuato a salire (+{perc_diff:.2f}%) dopo la vendita. Uscita un po' anticipata."
+                elif op["tipo"] == "ACQUISTO":
+                    if differenza_prezzo > 0:
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Intuizione corretta! Ho comprato a ${prezzo_operazione:,.2f} e il grafico è salito del +{perc_diff:.2f}%."
+                    else:
+                        nota_retrospettiva = f"\n🧠 **Analisi a posteriori:** Dopo l'acquisto il grafico è sceso temporaneamente del {perc_diff:.2f}%, testando la resistenza dei lotti."
                 
-                num_lotto = len(dati["Lotti"])
-                messaggio = (
-                    f"🟢 **ACQUISTO LOTTO #{num_lotto} (Dinamico)** 🟢\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"• **Prezzo attuale:** ${ultimo_prezzo:,.2f}\n"
-                    f"• **Quantità lotto:** {quantita:.5f} BTC\n"
-                    f"• **Spesa:** ${spesa:,.2f}\n"
-                    f"• **RSI:** {rsi_attuale:.1f} (Ipervenduto)\n\n"
-                    f"📊 **Stato Portafoglio:**\n"
-                    f"• **Prezzo medio carico:** ${prezzo_medio:,.2f}\n"
-                    f"• **Totale BTC accumulati:** {dati['btc']:.5f}\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"💰 **Saldo USD residuo:** ${dati['usd']:,.2f}"
-                )
+                # Resettiamo l'ultima operazione analizzata per evitare ripetizioni continue
+                dati["ultima_operazione"] = None
 
-        # 2. VENDITA PARZIALE (Se siamo in profitto del +0.5% o l'RSI è in ipercomprato > 65, vendiamo metà dei lotti per capitalizzare)
-        elif tot_btc > 0 and (profitto_perc >= 0.5 or rsi_attuale > 65):
-            # Vendiamo il lotto più vecchio (il primo della lista) per realizzare il profitto e liberare liquidità
+        # 1. ACQUISTO DINAMICO
+        if rsi_attuale < 35 and dati["usd"] > 100 and len(dati["Lotti"]) < 3 and trend_favorevole:
+            spesa_lorda = dati["usd"] * 0.30
+            commissione_acquisto = spesa_lorda * FEE_RATE
+            spesa_netta = spesa_lorda - commissione_acquisto
+            quantita = spesa_netta / ultimo_prezzo
+            
+            dati["usd"] -= spesa_lorda
+            dati["Lotti"].append({"quantita": quantita, "prezzo": ultimo_prezzo})
+            dati["btc"] = sum(l.get("quantita", 0) for l in dati["Lotti"])
+            
+            # Registriamo l'operazione per la retrospettiva futura
+            dati["ultima_operazione"] = {
+                "tipo": "ACQUISTO",
+                "prezzo": ultimo_prezzo,
+                "timestamp": timestamp_attuale
+            }
+            
+            num_lotto = len(dati["Lotti"])
+            messaggio = (
+                f"🟢 **ACQUISTO LOTTO #{num_lotto} (Pro-Ready)** 🟢\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"• **Prezzo:** ${ultimo_prezzo:,.2f}\n"
+                f"• **Quantità netta:** {quantita:.5f} BTC\n"
+                f"• **Spesa lorda:** ${spesa_lorda:,.2f}\n"
+                f"• **Fee:** -${commissione_acquisto:,.2f}\n"
+                f"• **RSI:** {rsi_attuale:.1f}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 **Saldo USD residuo:** ${dati['usd']:,.2f}"
+            )
+
+        # 2. VENDITA PARZIALE
+        elif tot_btc > 0 and (profitto_perc >= 0.8 or rsi_attuale > 65):
             lotto_da_vendere = dati["Lotti"].pop(0)
             quantita_venduta = lotto_da_vendere["quantita"]
             prezzo_carico_lotto = lotto_da_vendere["prezzo"]
             
-            ricavo = quantita_venduta * ultimo_prezzo
-            profitto_lotto_usd = ricavo - (quantita_venduta * prezzo_carico_lotto)
-            perc_lotto = ((ultimo_prezzo - prezzo_carico_lotto) / prezzo_carico_lotto) * 100
-            segno = "+" if profitto_lotto_usd >= 0 else ""
+            ricavo_lordo = quantita_venduta * ultimo_prezzo
+            commissione_vendita = ricavo_lordo * FEE_RATE
+            ricavo_netto = ricavo_lordo - commissione_vendita
             
-            dati["usd"] += ricavo
+            costo_iniziale_lotto = quantita_venduta * prezzo_carico_lotto
+            profitto_usd = ricavo_netto - costo_iniziale_lotto
+            perc_lotto_netta = (profitto_usd / costo_iniziale_lotto) * 100
+            segno = "+" if profitto_usd >= 0 else ""
+            
+            dati["usd"] += ricavo_netto
             dati["btc"] = sum(l.get("quantita", 0) for l in dati["Lotti"])
             
-            motivo = f"Target profitto raggiunto (+{perc_lotto:.2f}%)" if profitto_perc >= 0.5 else f"RSI in ipercomprato ({rsi_attuale:.1f})"
+            dati["ultima_operazione"] = {
+                "tipo": "VENDITA",
+                "prezzo": ultimo_prezzo,
+                "timestamp": timestamp_attuale
+            }
+            
+            motivo = f"Target profitto raggiunto (+{perc_lotto_netta:.2f}% netto)" if profitto_perc >= 0.8 else f"RSI ipercomprato ({rsi_attuale:.1f})"
             
             messaggio = (
-                f"🔵 **VENDITA PARZIALE (Prelievo Profitto)** 🔵\n"
+                f"🔵 **VENDITA PARZIALE NETTA (Pro-Ready)** 🔵\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo uscita:** ${ultimo_prezzo:,.2f}\n"
-                f"• **Quantità venduta:** {quantita_venduta:.5f} BTC\n"
-                f"• **Profitto sul lotto:** {segno}${profitto_lotto_usd:,.2f} ({segno}{perc_lotto:.2f}%)\n"
-                f"• **Motivo:** {motivo}\n\n"
-                f"📊 **Stato residuo:**\n"
-                f"• **Lotti ancora attivi:** {len(dati['Lotti'])}\n"
-                f"• **Totale BTC rimasti:** {dati['btc']:.5f}\n"
+                f"• **Profitto netto:** {segno}${profitto_usd:,.2f} ({segno}{perc_lotto_netta:.2f}%)\n"
+                f"• **Motivo:** {motivo}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}"
             )
 
-        # 3. STOP LOSS TOTALE DI EMERGENZA (Se il portafoglio globale perde oltre l'-2.0%)
-        elif tot_btc > 0 and profitto_perc <= -2.0:
-            ricavo_totale = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
+        # 3. STOP LOSS RIGIDO
+        elif tot_btc > 0 and profitto_perc <= -1.8:
+            ricavo_lordo_totale = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
+            fee_totali = ricavo_lordo_totale * FEE_RATE
+            ricavo_netto_totale = ricavo_lordo_totale - fee_totali
             costo_totale_iniziale = sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
-            perdita_usd = ricavo_totale - costo_totale_iniziale
+            perdita_usd = ricavo_netto_totale - costo_totale_iniziale
             
-            dati["usd"] += ricavo_totale
+            dati["usd"] += ricavo_netto_totale
             dati["Lotti"] = []
             dati["btc"] = 0.0
             
+            dati["ultima_operazione"] = {
+                "tipo": "VENDITA",
+                "prezzo": ultimo_prezzo,
+                "timestamp": timestamp_attuale
+            }
+            
             messaggio = (
-                f"🔴 **STOP LOSS DI EMERGENZA** 🔴\n"
+                f"🔴 **STOP LOSS DI PROTEZIONE** 🔴\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"• **Prezzo uscita totale:** ${ultimo_prezzo:,.2f}\n"
-                f"• **Perdita registrata:** -${abs(perdita_usd):,.2f} ({profitto_perc:.2f}%)\n"
-                f"• **Motivo:** Chiusura di protezione per ribasso prolungato.\n\n"
+                f"• **Perdita netta:** -${abs(perdita_usd):,.2f} ({profitto_perc:.2f}%)\n"
+                f"• **Motivo:** Chiusura di salvaguardia.\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
-                f"🪙 **Saldo BTC:** 0.0"
+                f"💰 **Saldo USD:** ${dati['usd']:,.2f}"
             )
 
-        # Report di controllo dettagliato se non ci sono azioni di compravendita immediate
+        # Report di controllo standard che include l'analisi retrospettiva se disponibile
         if not messaggio:
             if tot_btc > 0:
                 valore_attuale = tot_btc * ultimo_prezzo
                 profitto_temp = valore_attuale - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
                 segno = "+" if profitto_temp >= 0 else ""
                 stato = (
-                    f"📈 **Posizione attiva ({len(dati['Lotti'])} lotti accumulati)**\n"
-                    f"• Prezzo medio carico: ${prezzo_medio:,.2f}\n"
-                    f"• Performance live: {segno}${profitto_temp:,.2f} ({segno}{profitto_perc:.2f}%)\n"
-                    f"• RSI attuale: {rsi_attuale:.1f}"
+                    f"📈 **Posizione attiva ({len(dati['Lotti'])} lotti)**\n"
+                    f"• Prezzo medio: ${prezzo_medio:,.2f}\n"
+                    f"• Performance netta: {segno}${profitto_temp:,.2f} ({segno}{profitto_perc:.2f}%)"
                 )
             else:
-                stato = f"⏳ **In attesa di ipervenduto** (RSI attuale: {rsi_attuale:.1f} | Nessun lotto attivo)"
+                filtro_stato = "🟢 Trend favorevole" if trend_favorevole else "🔴 Trend ribassista (Blocco acquisti)"
+                stato = f"⏳ **In attesa**\n• RSI: {rsi_attuale:.1f}\n• Filtro mercato: {filtro_stato}"
 
             messaggio = (
-                f"🛡️ **REPORT DI CONTROLLO DINAMICO** 🛡️\n"
+                f"🛡️ **REPORT PRO-READY** 🛡️\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• **Prezzo BTC:** ${ultimo_prezzo:,.2f}\n"
-                f"• **RSI (1m):** {rsi_attuale:.1f}\n\n"
-                f"📌 **Analisi di mercato:**\n{stato}"
+                f"{nota_retrospettiva}\n\n"
+                f"📌 **Analisi:**\n{stato}"
             )
 
         with open(file_path, 'w') as f:
