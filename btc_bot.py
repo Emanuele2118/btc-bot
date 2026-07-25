@@ -7,22 +7,21 @@ from datetime import datetime, timezone
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 # ==================== CONFIGURAZIONE ====================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-GOOGLE_SHEET_URL = os.environ.get("GOOGLE_SHEET_URL") # Opzionale per log esterni
+GOOGLE_SHEET_URL = os.environ.get("GOOGLE_SHEET_URL")
 
 PORTFOLIO_FILE = "portfolio.json"
 
-# Configurazione Capitale e Strategia
-CAPITALE_INIZIALE = 10000.0  # USD totali allocati per il paper trading
-CAPITALE_PER_LOTTO = 2500.0   # USD per ogni lotto (suddiviso per max 4 lotti)
-MAX_LOTTI = 4                 # Limite massimo di lotti acquistabili
+CAPITALE_INIZIALE = 10000.0  
+CAPITALE_PER_LOTTO = 2500.0   
+MAX_LOTTI = 4                 
 
 # ==================== GESTIONE PORTAFOGLIO ====================
 def carica_portafoglio():
-    """Carica lo stato dei lotti dal file JSON persistente o inizializza lo stato predefinito."""
     if os.path.exists(PORTFOLIO_FILE):
         try:
             with open(PORTFOLIO_FILE, 'r') as f:
@@ -42,17 +41,16 @@ def carica_portafoglio():
     }
 
 def salva_portafoglio(portafoglio):
-    """Salva lo stato corrente dei lotti nel file JSON."""
     try:
         with open(PORTFOLIO_FILE, 'w') as f:
             json.dump(portafoglio, f, indent=4)
+        print("Portfolio salvato correttamente in locale (verrà committato dall'Action).")
     except Exception as e:
         print(f"Errore nel salvataggio del portafoglio: {e}")
 
-# ==================== RECUPERO DATI DI MERCATO (TIMEFRAME 1 MINUTO) ====================
+# ==================== RECUPERO DATI (TIMEFRAME 1 MINUTO) ====================
 def ottieni_dati_binance():
-    """Scarica i dati storici a 1 minuto da Binance, con fallback su CoinGecko se Binance fallisce."""
-    url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=150"
+    url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=120"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
@@ -65,7 +63,7 @@ def ottieni_dati_binance():
                 ])
                 for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                     df[col] = df[col].astype(float)
-                df['Time'] = df['Time'] / 1000.0
+                df['Datetime'] = pd.to_datetime(df['Time'], unit='ms', utc=True)
                 return df
     except Exception as e:
         print(f"Errore connessione Binance: {e}")
@@ -77,11 +75,11 @@ def ottieni_dati_binance():
         if resp.status_code == 200:
             cg_data = resp.json()
             df = pd.DataFrame(cg_data, columns=['Time', 'Open', 'High', 'Low', 'Close'])
-            df['Time'] = df['Time'] / 1000.0
+            df['Datetime'] = pd.to_datetime(df['Time'], unit='ms', utc=True)
             df['Volume'] = 1000.0
             return df
     except Exception as e:
-        print(f"Errore anche nel fallback CoinGecko: {e}")
+        print(f"Errore fallback CoinGecko: {e}")
         
     return None
 
@@ -96,11 +94,11 @@ def calcola_rsi(serie, periodo=14):
 def calcola_atr(df, periodo=14):
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
-    low_close = np.abs(df['Low'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Low'].shift())
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO CON LIVELLI ====================
+# ==================== GENERAZIONE GRAFICO ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
         fig = plt.figure(figsize=(10, 7.5), facecolor='white')
@@ -109,7 +107,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
         ax1 = fig.add_subplot(gs[0])
         ax1.set_facecolor('white')
         
-        dati_plot = df.tail(100).copy().reset_index(drop=True)
+        dati_plot = df.tail(90).copy().reset_index(drop=True)
         x = range(len(dati_plot))
         
         for i in x:
@@ -129,7 +127,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
         ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3f51b5', linewidth=1.2, linestyle='--')
         
         if prezzo_medio > 0:
-            ax1.axhline(y=prezzo_medio, color='#0288d1', linestyle='-.', linewidth=1.5, alpha=0.8, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
+            ax1.axhline(y=prezzo_medio, color='#0288d1', linestyle='-.', linewidth=1.5, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
             prezzo_sl = prezzo_medio * (1 + (stop_loss_perc / 100.0))
             colore_sl = '#2e7d32' if stop_loss_perc >= 0 else '#c62828'
             etichetta_sl = f'Stop/Lockdown ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}'
@@ -147,15 +145,9 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#d0d0d0', linestyle='--', alpha=0.5)
         
-        if 'Time' in dati_plot.columns:
-            orari = []
-            for t in dati_plot['Time']:
-                try:
-                    dt = datetime.fromtimestamp(float(t), tz=timezone.utc)
-                    orari.append(dt.strftime('%H:%M'))
-                except:
-                    orari.append('')
-            step = max(1, len(x) // 7)
+        if 'Datetime' in dati_plot.columns:
+            orari = [dt.strftime('%H:%M') for dt in dati_plot['Datetime']]
+            step = max(1, len(x) // 6)
             ax1.set_xticks(list(x)[::step])
             ax1.set_xticklabels([orari[i] for i in list(x)[::step]], fontsize=8)
         
@@ -178,13 +170,13 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
         plt.close()
         return chart_path
     except Exception as e:
-        print(f"Errore nella generazione del grafico con livelli: {e}")
+        print(f"Errore nella generazione del grafico: {e}")
         return None
 
 # ==================== INVIO TELEGRAM ====================
 def invia_messaggio_telegram(testo, chart_path=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Credenziali Telegram mancanti. Messaggio non inviato.")
+        print("Credenziali Telegram mancanti.")
         return
     
     try:
@@ -216,7 +208,6 @@ def esegui_bot():
     ultimo_prezzo = df['Close'].iloc[-1]
     rsi_attuale = df['rsi'].iloc[-1] if not np.isnan(df['rsi'].iloc[-1]) else 50.0
     atr_attuale = df['atr'].iloc[-1] if not np.isnan(df['atr'].iloc[-1]) else (ultimo_prezzo * 0.01)
-    volatilita_pct = (atr_attuale / ultimo_prezzo) * 100
 
     portafoglio = carica_portafoglio()
     lotti = portafoglio.get("lotti", [])
@@ -255,14 +246,15 @@ def esegui_bot():
                 f"• Saldo USD Aggiornato: ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
+            salva_portafoglio(portafoglio)
             lotti_attivi = 0
             prezzo_medio = 0.0
 
-    # --- CONTROLLO INGRESSO (ACQUISTO MULTI-LOTTO FINO A MAX_LOTTI) ---
+    # --- CONTROLLO INGRESSO (FINO A 4 LOTTI) ---
     if not azione_eseguita:
         saldo_corrente = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
         
-        # Condizione 1: Primo lotto
+        # Primo lotto
         if lotti_attivi == 0 and (rsi_attuale < 35 or df['ema_veloce'].iloc[-1] > df['ema_lenta'].iloc[-1]):
             if saldo_corrente >= CAPITALE_PER_LOTTO:
                 quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
@@ -279,15 +271,16 @@ def esegui_bot():
                 messaggio_notifica = (
                     f"🟢 *ACQUISTO LOTTO (#1/{MAX_LOTTI}) [1m]* 🟢\n\n"
                     f"• Prezzo entrata: ${ultimo_prezzo:,.2f}\n"
-                    f"• Quantità acquistata: {quantita:.5f} BTC\n"
-                    f"• Spesa lorda: ${CAPITALE_PER_LOTTO:,.2f}\n"
-                    f"• Motivazione: RSI ipervenduto ({rsi_attuale:.1f}) / Setup EMA.\n\n"
+                    f"• Quantità: {quantita:.5f} BTC\n"
+                    f"• Spesa: ${CAPITALE_PER_LOTTO:,.2f}\n"
+                    f"• Motivazione: RSI ({rsi_attuale:.1f}) / Setup EMA.\n\n"
                     f"📊 Lotti attivi: 1/{MAX_LOTTI}\n"
-                    f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
+                    f"💰 Saldo USD: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
+                salva_portafoglio(portafoglio)
 
-        # Condizione 2: Lotti successivi (fino a 4) in caso di ribasso dell'1.5%
+        # Lotti successivi (fino a 4) se il prezzo scende dell'1.5% dal prezzo medio
         elif 0 < lotti_attivi < MAX_LOTTI and prezzo_medio > 0 and ultimo_prezzo <= (prezzo_medio * 0.985):
             if saldo_corrente >= CAPITALE_PER_LOTTO:
                 nuovo_id = lotti_attivi + 1
@@ -306,29 +299,28 @@ def esegui_bot():
                 lotti_attivi = nuovo_id
                 
                 messaggio_notifica = (
-                    f"🟢 *ACQUISTO LOTTO (#{nuovo_id}/{MAX_LOTTI}) MEDIAZIONE RIBASSO* 🟢\n\n"
+                    f"🟢 *ACQUISTO LOTTO (#{nuovo_id}/{MAX_LOTTI}) CON PROFIT LOCKDOWN* 🟢\n\n"
                     f"• Prezzo entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Quantità acquistata: {quantita:.5f} BTC\n"
-                    f"• Nuovo prezzo medio: ${prezzo_medio:,.2f}\n"
-                    f"• Spesa totale lorda: ${spesa_totale:,.2f}\n\n"
-                    f"📊 Lotti attivi: {nuovo_id}/{MAX_LOTTI}\n"
+                    f"• Spesa totale lorda: ${spesa_totale:,.2f}\n"
+                    f"• Motivazione: Ribasso dal prezzo medio ({((ultimo_prezzo/prezzo_medio)-1)*100:.2f}%). Lotto #{nuovo_id} aggiunto.\n\n"
+                    f"📊 Lotti attivi totali: {nuovo_id}\n"
                     f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
-
-    salva_portafoglio(portafoglio)
+                salva_portafoglio(portafoglio)
 
     if not azione_eseguita:
         performance_netta = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
         messaggio_notifica = (
-            f"🛡️ *REPORT DI MERCATO (1m) & PROFIT LOCKDOWN* 🛡️\n\n"
+            f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n\n"
             f"📌 *Analisi e Decisione del Bot:*\n"
-            f"📈 Posizioni attive ({lotti_attivi}/{MAX_LOTTI} lotti)\n"
+            f"📈 Posizioni attive ({lotti_attivi} lotti in corso)\n"
             f"• Quantità totale BTC: {quantita_totale:.5f}\n"
             f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
             f"• Performance netta: {performance_netta:+.2f}%\n"
-            f"• Protezione attiva: Stop Loss dinamico a {stop_loss_effettivo_perc:+.2f}%."
+            f"• Protezione attiva: Stop Loss dinamico a {stop_loss_effettivo_perc:+.2f}% (Supporti strutturali)."
         )
 
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, prezzo_medio, stop_loss_effettivo_perc)
