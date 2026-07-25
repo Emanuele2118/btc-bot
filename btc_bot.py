@@ -26,7 +26,7 @@ def manda_messaggio_telegram(testo):
         print(f"Errore invio Telegram: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot (Frazionato e Con Commissioni) ---")
+    print("--- Inizio esecuzione Bot (Report Dettagliato in Attesa) ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
@@ -93,7 +93,6 @@ def run_bot():
 
         trend_favorevole = ema_v >= (ema_l * 0.998)
         
-        # --- VERIFICA RETROSPETTIVA ---
         nota_retrospettiva = ""
         if dati["ultima_operazione"] is not None:
             op = dati["ultima_operazione"]
@@ -188,7 +187,7 @@ def run_bot():
             ricavo_lordo_totale = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
             fee_totali = ricavo_lordo_totale * FEE_RATE
             ricavo_netto_totale = ricavo_lordo_totale - fee_totali
-            costo_totale_iniziale = sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
+            costo_totale_iniziale = sum(l["quantita"] * l["perzzo"] for l in dati["Lotti"]) if "perzzo" in locals() else sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
             perdita_usd = ricavo_netto_totale - costo_totale_iniziale
             
             dati["usd"] += ricavo_netto_totale
@@ -210,7 +209,7 @@ def run_bot():
                 f"💰 **Saldo USD:** ${dati['usd']:,.2f}"
             )
 
-        # Report di controllo standard
+        # Report di controllo avanzato con spiegazione dettagliata dell'attesa
         if not messaggio:
             if tot_btc > 0:
                 valore_attuale = tot_btc * ultimo_prezzo
@@ -222,8 +221,21 @@ def run_bot():
                     f"• Performance netta: {segno}${profitto_temp:,.2f} ({segno}{profitto_perc:.2f}%)"
                 )
             else:
-                filtro_stato = "🟢 Trend favorevole" if trend_favorevole else "🔴 Trend ribassista (Blocco acquisti)"
-                stato = f"⏳ **In attesa**\n• RSI: {rsi_attuale:.1f}\n• Filtro mercato: {filtro_stato}"
+                # Spiegazione dettagliata di cosa sta aspettando il bot
+                if trend_favorevole:
+                    spiegazione_attesa = (
+                        f"🟢 **In attesa di acquisto (Trend FAVOREVOLE)**\n"
+                        f"• Il mercato sta salendo bene, quindi il semaforo è VERDE per comprare.\n"
+                        f"• **Cosa aspetto?** L'RSI è a {rsi_attuale:.1f} (obiettivo < 35). "
+                        f"Sto aspettando un calo temporaneo del prezzo per non comprare sui massimi."
+                    )
+                else:
+                    spiegazione_attesa = (
+                        f"🔴 **In attesa protetta (Trend RIBASSISTA)**\n"
+                        f"• Il mercato sta scendendo o è debole, il filtro anti-crollo ha bloccato gli acquisti.\n"
+                        f"• **Cosa aspetto?** Che le medie mobili tornino a incrociarsi al rialzo per sbloccare le operazioni in sicurezza."
+                    )
+                stato = spiegazione_attesa
 
             messaggio = (
                 f"🛡️ **REPORT DI MERCATO** 🛡️\n"
