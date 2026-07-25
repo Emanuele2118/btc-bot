@@ -62,7 +62,7 @@ def carica_portafoglio():
         if "bot_in_pausa" not in data:
             data["bot_in_pausa"] = False
         if "storico_operazioni" not in data:
-            data["storico_operazioni"] = [] # Per calcolare Win Rate e Profit Factor
+            data["storico_operazioni"] = []
         return data
     
     return {
@@ -248,12 +248,12 @@ def invia_messaggio_telegram(testo, chart_path=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# ==================== ASCOLTATORE COMANDI TELEGRAM (BIDIREZIONALE) ====================
+# ==================== ASCOLTATORE COMANDI TELEGRAM (SOLO MONITORAGGIO) ====================
 def gestisci_comandi_telegram():
     if not TELEGRAM_BOT_TOKEN:
         return
     offset = 0
-    print("Avvio ascoltatore comandi Telegram...")
+    print("Avvio ascoltatore comandi Telegram (modalità protetta/autonoma)...")
     while True:
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30"
@@ -274,25 +274,44 @@ def gestisci_comandi_telegram():
                     
                     if text == "/status":
                         risposta = "🟢 Bot attivo e operativo regolarmente." if not portafoglio.get("bot_in_pausa") else "⏸ Bot attualmente in pausa."
+                    
                     elif text == "/pause":
                         portafoglio["bot_in_pausa"] = True
                         salva_portafoglio(portafoglio)
                         risposta = "⏸ Operatività automatica messa in pausa con successo."
+                    
                     elif text == "/resume":
                         portafoglio["bot_in_pausa"] = False
                         salva_portafoglio(portafoglio)
                         risposta = "▶️ Operatività automatica riattivata."
+                    
                     elif text == "/sellall":
                         lotti = portafoglio.get("lotti", [])
                         if lotti:
+                            df_temp = ottieni_dati_coinbase()
+                            p_att = df_temp['Close'].iloc[-1] if df_temp is not None else lotti[0]['prezzo_entrata']
+                            spesa_tot = sum(l['spesa'] for l in lotti)
+                            q_tot = sum(l['quantita'] for l in lotti)
+                            ricavo_tot = (q_tot * p_att) * (1 - FEE_PERCENTUALE)
+                            profitto_tot = ricavo_tot - spesa_tot
+                            
                             portafoglio["lotti"] = []
-                            portafoglio["saldo_usd"] = portafoglio.get("saldo_usd", CAPITALE_INIZIALE) + sum(l['spesa'] for l in lotti)
+                            portafoglio["saldo_usd"] = portafoglio.get("saldo_usd", CAPITALE_INIZIALE) + ricavo_tot
+                            portafoglio.setdefault("storico_operazioni", []).append(profitto_tot)
                             salva_portafoglio(portafoglio)
-                            risposta = "🚨 EMERGENZA: Tutte le posizioni sono state chiuse manualmente tramite comando."
+                            risposta = f"🚨 EMERGENZA: Tutte le posizioni chiuse manualmente. P&L totale: ${profitto_tot:+,.2f}"
                         else:
                             risposta = "ℹ️ Nessuna posizione attiva da chiudere."
+                    
                     elif text == "/help":
-                        risposta = "🛠 *Comandi disponibili:*\n/status - Stato del bot\n/pause - Sospendi operatività\n/resume - Riprendi operatività\n/sellall - Chiudi tutte le posizioni"
+                        risposta = (
+                            "🛠 *COMANDI DISPONIBILI (MODALITÀ AUTONOMA)*\n\n"
+                            "• `/status` - Mostra lo stato del bot\n"
+                            "• `/pause` - Sospende l'operatività automatica\n"
+                            "• `/resume` - Riattiva l'operatività automatica\n"
+                            "• `/sellall` - Emergenza: chiude tutte le posizioni\n"
+                            "• `/help` - Mostra questa guida"
+                        )
 
                     if risposta:
                         invia_messaggio_telegram(risposta)
@@ -341,7 +360,7 @@ def esegui_bot():
     timestamp_attuale = now_utc.timestamp()
     oggi_str = now_utc.strftime("%Y-%m-%d")
 
-    # Resoconto giornaliero & Statistiche (Win Rate / Profit Factor)
+    # Resoconto giornaliero & Statistiche
     data_ultima = portafoglio.get("data_ultima_registrazione", oggi_str)
     if data_ultima != oggi_str:
         valore_portafoglio_attuale = portafoglio["saldo_usd"] + sum(l['quantita'] * ultimo_prezzo for l in lotti)
@@ -366,7 +385,7 @@ def esegui_bot():
         
         portafoglio["valore_iniziale_giornata"] = valore_portafoglio_attuale
         portafoglio["data_ultima_registrazione"] = oggi_str
-        portafoglio["storico_operazioni"] = [] # Reset giornaliero metriche
+        portafoglio["storico_operazioni"] = []
         salva_portafoglio(portafoglio)
 
     quantita_totale = sum(l.get('quantita', 0) for l in lotti)
@@ -420,7 +439,7 @@ def esegui_bot():
     if not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
         stop_loss_effettivo_perc = -2.5
         if profitto_P_L >= 3.5:
-            stop_loss_effettivo_perc = +1.5 # Trailing Stop a profitto protetto
+            stop_loss_effettivo_perc = +1.5
         elif profitto_P_L >= 2.0:
             stop_loss_effettivo_perc = +0.5
 
@@ -476,9 +495,9 @@ def esegui_bot():
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
 
-    # --- REPORT DI MERCATO PERIODICO ---
+    # --- REPORT DI MERCATO PERIODICO (OGNI 5 MINUTI) ---
     tempo_ultimo_report = portafoglio.get("ultimo_report_time", 0)
-    puoi_inviare_report = (timestamp_attuale - tempo_ultimo_report) >= 50
+    puoi_inviare_report = (timestamp_attuale - tempo_ultimo_report) >= 300
 
     if not azione_eseguita and puoi_inviare_report:
         strategia_desc = "Trend-Following (Inseguimento trend)" if regime_mercato == "TREND (Direzionale)" else "Mean-Reversion (Range Trading)"
@@ -498,15 +517,19 @@ def esegui_bot():
         portafoglio["ultimo_report_time"] = timestamp_attuale
         salva_portafoglio(portafoglio)
 
+    # Generazione grafico e invio selettivo su Telegram
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, regime_mercato)
-    if azione_eseguita or puoi_inviare_report:
+    
+    if azione_eseguita:
+        invia_messaggio_telegram(messaggio_notifica, chart_path)
+    elif puoi_inviare_report:
         invia_messaggio_telegram(messaggio_notifica, chart_path)
 
 if __name__ == "__main__":
-    # Avvia l'ascoltatore dei comandi Telegram in background
+    # Avvia l'ascoltatore dei comandi Telegram in background (solo monitoraggio/emergenza)
     threading.Thread(target=gestisci_comandi_telegram, daemon=True).start()
     
-    # Loop principale del bot
+    # Loop principale del bot (verifica ogni 60 secondi)
     while True:
         try:
             esegui_bot()
