@@ -3,7 +3,7 @@ import json
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -31,13 +31,16 @@ def carica_portafoglio():
                         data["saldo_usd"] = CAPITALE_INIZIALE
                     if "lotti" not in data:
                         data["lotti"] = []
+                    if "ultima_attesa" not in data:
+                        data["ultima_attesa"] = None
                     return data
         except Exception as e:
             print(f"Errore nella lettura del portafoglio: {e}")
     
     return {
         "saldo_usd": CAPITALE_INIZIALE,
-        "lotti": []
+        "lotti": [],
+        "ultima_attesa": None
     }
 
 def salva_portafoglio(portafoglio):
@@ -153,7 +156,6 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
             
         ax1.legend(loc='upper left', facecolor='#fafafa', edgecolor='none', labelcolor='black', fontsize=8)
 
-        # Pannello di controllo testuale in basso pulito
         props = dict(boxstyle='square,pad=0.8', facecolor='#eeeeee', edgecolor='#cccccc', alpha=0.9)
         info_testo = f"  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato Operativo: {stato_testo}"
         ax1.text(0.02, -0.15, info_testo, transform=ax1.transAxes, fontsize=9, family='monospace', verticalalignment='top', bbox=props)
@@ -232,6 +234,7 @@ def esegui_bot():
             profitto_operazione = ricavo - spesa_totale
             portafoglio["saldo_usd"] = portafoglio.get("saldo_usd", CAPITALE_INIZIALE) + ricavo
             portafoglio["lotti"] = []
+            portafoglio["ultima_attesa"] = None
             
             messaggio_notifica = (
                 f"🚨 *CHIUSURA POSIZIONE (STOP / PROFIT LOCKDOWN)* 🚨\n\n"
@@ -259,6 +262,7 @@ def esegui_bot():
                     "quantita": quantita,
                     "spesa": CAPITALE_PER_LOTTO
                 })
+                portafoglio["ultima_attesa"] = None
                 
                 prezzo_medio = ultimo_prezzo
                 lotti_attivi = 1
@@ -286,6 +290,7 @@ def esegui_bot():
                     "quantita": quantita,
                     "spesa": CAPITALE_PER_LOTTO
                 })
+                portafoglio["ultima_attesa"] = None
                 
                 quantita_totale = sum(l.get('quantita', 0) for l in portafoglio["lotti"])
                 spesa_totale = sum(l.get('spesa', 0) for l in portafoglio["lotti"])
@@ -304,23 +309,56 @@ def esegui_bot():
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
 
-    # Se non ci sono state aperture/chiusure, inviamo comunque il report di controllo con le motivazioni dell'attesa
+    # --- ANALISI A POSTERIORI DELL'ATTESA PRECEDENTE ---
+    analisi_a_posteriori = ""
+    ultima_attesa = portafoglio.get("ultima_attesa")
+    
     if not azione_eseguita:
-        motivo_attesa = "Il mercato non soddisfa ancora i criteri di ingresso (RSI o ribasso dal prezzo medio non raggiunto)."
+        if ultima_attesa:
+            prezzo_precedente = ultima_attesa.get("prezzo", ultimo_prezzo)
+            differenza_perc = ((ultimo_prezzo - prezzo_precedente) / prezzo_precedente) * 100
+            
+            if lotti_attivi == 0:
+                if differenza_perc < -0.2:
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Ottima intuizione! Al controllo precedente il prezzo era a ${prezzo_precedente:,.2f} ed è stato evitato l'ingresso: il mercato è sceso del {differenza_perc:+.2f}%, confermando che l'attesa ha evitato un prezzo d'acquisto anticipato."
+                elif differenza_perc > 0.2:
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Occasione persa. Al controllo precedente il prezzo era a ${prezzo_precedente:,.2f} e si è scelto di attendere: il mercato è salito del {differenza_perc:+.2f}%, lasciandosi sfuggire un punto d'ingresso più basso."
+                else:
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Scelta di attesa prudente. Il prezzo è rimasto stabile (${prezzo_precedente:,.2f} ➔ ${ultimo_prezzo:,.2f}), confermando la fase di consolidamento."
+            else:
+                if differenza_perc > 0.2:
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Scelta saggia. Si è evitato di mediare a ${prezzo_precedente:,.2f} e il mercato è risalito del {differenza_perc:+.2f}%, evitando di appesantire l'esposizione in un momento sfavorevole."
+                elif differenza_perc < -0.2:
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Attesa prematura. Si è scelto di non mediare a ${prezzo_precedente:,.2f} ma il mercato è sceso di un ulteriore {differenza_perc:+.2f}%, mancando un'occasione di accumulo più profondo."
+                else:
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Mercato laterale rispetto al controllo precedente ($ {prezzo_precedente:,.2f}). Posizioni monitorate senza variazioni di rilievo."
+
+        # Aggiorna la memoria con il prezzo e timestamp attuali
+        portafoglio["ultima_attesa"] = {
+            "prezzo": ultimo_prezzo,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        salva_portafoglio(portafoglio)
+
+        motivo_attesa = f"RSI attuale ({rsi_attuale:.1f}) non è ancora sotto la soglia d'ingresso o manca il ribasso richiesto."
         if lotti_attivi > 0:
-            motivo_attesa = f"Posizioni aperte ({lotti_attivi} lotti). In attesa di raggiungere il target di profitto o il livello di stop/lockdown."
-        
+            motivo_attesa = f"Posizioni aperte ({lotti_attivi} lotti). Il prezzo non ha ancora raggiunto la soglia di ribasso dell'1.5% per il lotto successivo e il target di profitto non è attivo."
+
         messaggio_notifica = (
             f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n\n"
+            f"{analisi_a_posteriori}\n\n"
             f"📌 *Analisi e Decisione del Bot (In Attesa):*\n"
             f"• RSI attuale: {rsi_attuale:.1f}\n"
             f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI} lotti\n"
             f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
             f"• Performance netta: {profitto_P_L:+.2f}%\n"
-            f"• Motivo dell'attesa: {motivo_attesa}"
+            f"• Motivo dell'attesa attuale: {motivo_attesa}"
         )
 
-    # Generazione grafico e invio sempre attivo su Telegram
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, prezzo_medio, stop_loss_effettivo_perc)
-    invia_messaggio_telegram(messaggio_
+    invia_messaggio_telegram(messaggio_notifica, chart_path)
+    print("Report inviato con successo su Telegram.")
+
+if __name__ == "__main__":
+    esegui_bot()
