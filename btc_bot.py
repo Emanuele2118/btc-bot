@@ -15,56 +15,82 @@ GOOGLE_SHEET_URL = os.environ.get('GOOGLE_SHEET_URL')
 FEE_RATE = 0.005  # 0.5% di commissione per transazione
 
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
-    """Genera un grafico avanzato a due pannelli con prezzo, medie mobili e pannello dati descrittivo."""
+    """Genera un grafico a candele con sfondo bianco, medie mobili, orari reali e pannello dati."""
     try:
-        fig = plt.figure(figsize=(10, 7.5), facecolor='#1e1e1e')
+        fig = plt.figure(figsize=(10, 7.5), facecolor='white')
         gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.3])
         
-        # --- PANNELLO 1: GRAFICO PREZZO & MEDIE MOBILI ---
+        # --- PANNELLO 1: GRAFICO A CANDELE & MEDIE MOBILI ---
         ax1 = fig.add_subplot(gs[0])
-        ax1.set_facecolor('#1e1e1e')
+        ax1.set_facecolor('white')
         
-        dati_plot = df.tail(100).copy()
+        dati_plot = df.tail(100).copy().reset_index(drop=True)
         x = range(len(dati_plot))
         
-        ax1.plot(x, dati_plot['Close'], label='Prezzo BTC', color='#00ffcc', linewidth=1.8)
-        ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#ff00ff', linewidth=1.2, linestyle='--')
-        ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#ffcc00', linewidth=1.2, linestyle='--')
+        # Disegno delle candele (Verde se Close >= Open, Viola se Close < Open)
+        for i in x:
+            o = dati_plot['Open'].iloc[i]
+            c = dati_plot['Close'].iloc[i]
+            h = dati_plot['High'].iloc[i]
+            l = dati_plot['Low'].iloc[i]
+            
+            colore = '#26a69a' if c >= o else '#9c27b0'
+            
+            ax1.plot([i, i], [l, h], color=colore, linewidth=1, zorder=1)
+            bottom = min(o, c)
+            height = abs(c - o) if abs(c - o) > 0 else 0.01
+            ax1.bar(i, height, bottom=bottom, color=colore, width=0.6, zorder=2)
+
+        # Medie mobili
+        ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#ff9800', linewidth=1.2, linestyle='--')
+        ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3f51b5', linewidth=1.2, linestyle='--')
         
         ultimo_idx = len(x) - 1
-        ax1.scatter([ultimo_idx], [prezzo_attuale], color='#00ffcc', s=45, zorder=5)
+        ax1.scatter([ultimo_idx], [prezzo_attuale], color='#26a69a', s=45, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
                      xy=(ultimo_idx, prezzo_attuale), 
                      xytext=(-65, 12), textcoords='offset points',
-                     color='#00ffcc', fontsize=9, fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.25', fc='#111111', ec='#00ffcc', alpha=0.85))
+                     color='black', fontsize=9, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.25', fc='#f0f0f0', ec='#26a69a', alpha=0.9))
 
-        ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='white', fontsize=13, fontweight='bold', pad=12)
-        ax1.tick_params(colors='white', labelsize=9)
-        ax1.grid(True, color='#333333', linestyle=':', alpha=0.7)
+        ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='black', fontsize=13, fontweight='bold', pad=12)
+        ax1.tick_params(colors='black', labelsize=9)
+        
+        # Griglia dettagliata sull'asse Y
+        ax1.grid(True, color='#d0d0d0', linestyle='--', alpha=0.5)
+        
+        # Gestione etichette Asse X con orari reali
+        if 'Time' in dati_plot.columns:
+            orari = []
+            for t in dati_plot['Time']:
+                try:
+                    dt = datetime.fromtimestamp(float(t), tz=timezone.utc)
+                    orari.append(dt.strftime('%H:%M'))
+                except:
+                    orari.append('')
+            
+            step = max(1, len(x) // 7)
+            ax1.set_xticks(list(x)[::step])
+            ax1.set_xticklabels([orari[i] for i in list(x)[::step]], fontsize=8)
         
         for spine in ax1.spines.values():
-            spine.set_color('#444444')
+            spine.set_color('#cccccc')
             
-        ax1.legend(loc='upper left', facecolor='#2e2e2e', edgecolor='none', labelcolor='white', fontsize=9)
+        ax1.legend(loc='upper left', facecolor='#f9f9f9', edgecolor='none', labelcolor='black', fontsize=9)
 
         # --- PANNELLO 2: DASHBOARD DATI UTILI IN BASSO ---
         ax2 = fig.add_subplot(gs[1])
-        ax2.set_facecolor('#161616')
+        ax2.set_facecolor('#f4f4f4')
         ax2.axis('off')
         
-        info_testo = (
-            f" 📊  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n"
-            f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n"
-            f" • Stato Operativo: {stato_testo}"
-        )
+        info_testo = f" 📊  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato Operativo: {stato_testo}"
         
-        ax2.text(0.02, 0.5, info_testo, color='white', fontsize=10, family='monospace',
-                 verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#222222', ec='#555555'))
+        ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace',
+                 verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
 
         plt.tight_layout()
         chart_path = 'temp_chart.png'
-        plt.savefig(chart_path, dpi=150, facecolor='#1e1e1e', edgecolor='none')
+        plt.savefig(chart_path, dpi=150, facecolor='white', edgecolor='none')
         plt.close()
         return chart_path
     except Exception as e:
@@ -160,7 +186,7 @@ def run_bot():
             raw_data = response.json()
             raw_data.reverse()
             df = pd.DataFrame(raw_data, columns=['Time', 'Low', 'High', 'Open', 'Close', 'Volume'])
-            df = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
+            df = df[['Time', 'Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
         else:
             print(f"Errore Coinbase: {response.status_code}")
             return
@@ -233,10 +259,10 @@ def run_bot():
         motivo_stop_loss = "Supporti strutturali"
         
         if profitto_perc >= 3.0:
-            stop_loss_effettivo_perc = 1.0  # Blinda almeno +1.0% di guadagno netto garantito
+            stop_loss_effettivo_perc = 1.0  
             motivo_stop_loss = "Profit Lockdown livello 2 (Garantito +1%)"
         elif profitto_perc >= 1.5:
-            stop_loss_effettivo_perc = 0.0  # Breakeven (zero rischi di perdita)
+            stop_loss_effettivo_perc = 0.0  
             motivo_stop_loss = "Profit Lockdown livello 1 (Pareggio / Breakeven)"
 
         # Retrospettiva
@@ -290,7 +316,7 @@ def run_bot():
             dati["ultima_transazione_timestamp"] = timestamp_attuale
             
             numero_lotto_attuale = len(dati["Lotti"])
-            motivo_acquisto = f"{motivo_rsi} | {motivo_vol}. Aggiunto lotto #{numero_lotto_attuale} bilanciando il rischio di portafoglio."
+            motivo_acquisto = f"{motivo_rsi} | {motivo_vol}. Aggiunto lotto #{numero_lotto_attuale} bilanciando il rischio."
             registra_su_google_sheets(stringa_data, "ACQUISTO", ultimo_prezzo, qta, comm_acq, 0.0, f"Lotto #{numero_lotto_attuale}")
             
             messaggio = (
@@ -298,6 +324,7 @@ def run_bot():
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• *Prezzo entrata:* ${ultimo_prezzo:,.2f}\n"
                 f"• *Quantità acquistata:* {qta:.5f} BTC\n"
+                f"• *Spesa totale lorda:* ${spesa_lorda:,.2f}\n"
                 f"• *Perché questa scelta:* {motivo_acquisto}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 *Lotti attivi totali:* {numero_lotto_attuale}\n"
@@ -320,7 +347,7 @@ def run_bot():
             dati["ultima_transazione_timestamp"] = timestamp_attuale
             
             motivo = f"Trailing Take Profit ATR (ritracciamento del {soglia_ritracciamento_perc:.2f}%)" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f} > 68)"
-            motivo_vendita = f"{motivo}. Blocco parziale dei profitti sul lotto più vecchio per mitigare il rischio di inversione lasciando correre le posizioni più recenti."
+            motivo_vendita = f"{motivo}. Blocco parziale dei profitti sul lotto più vecchio."
             
             registra_su_google_sheets(stringa_data, "VENDITA", ultimo_prezzo, qta_v, comm_vend, profitto_usd, motivo)
             rimanenti_btc = sum(l["quantita"] for l in dati["Lotti"])
@@ -358,7 +385,7 @@ def run_bot():
             messaggio = (
                 f"{icona_uscita} *{tipo_uscita_txt}* {icona_uscita}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"• *Criterio attivato:* {motivo_stop_loss} (Performance attuale: {profitto_perc:.2f}% vs soglia limite {stop_loss_effettivo_perc:.2f}%).\n"
+                f"• *Criterio attivato:* {motivo_stop_loss} (Performance: {profitto_perc:.2f}% vs soglia {stop_loss_effettivo_perc:.2f}%).\n"
                 f"• *Risultato netto:* {segno_res}${risultato_usd:,.2f}\n"
                 f"• *Saldo USD:* ${dati['usd']:,.2f}"
             )
@@ -379,13 +406,13 @@ def run_bot():
                     stato = (
                         f"🟢 *In attesa attiva (Trend FAVOREVOLE)*\n"
                         f"• RSI attuale: {rsi_attuale:.1f} (soglia d'ingresso < 38)\n"
-                        f"• *Perché stiamo attendendo:* La struttura macro è rialzista, ma attendiamo uno scarico più deciso dell'indicatore RSI o lo scadere del cooldown per calibrare un nuovo lotto a basso rischio."
+                        f"• *Perché stiamo attendendo:* Struttura rialzista, in attesa di uno scarico dell'RSI."
                     )
                 else:
                     stato = (
                         f"🔴 *In attesa protetta (Trend RIBASSISTA)*\n"
                         f"• RSI attuale: {rsi_attuale:.1f}\n"
-                        f"• *Perché stiamo attendendo:* Il mercato mostra debolezza sotto la media mobile principale. Il bot sceglie di rimanere in USD per azzerare l'esposizione al rischio ribassista."
+                        f"• *Perché stiamo attendendo:* Mercato debole sotto la media principale. Restiamo in USD."
                     )
 
             messaggio = f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n━━━━━━━━━━━━━━━━━━━\n• *Prezzo BTC:* ${ultimo_prezzo:,.2f}\n{nota_retrospettiva}\n\n📌 *Analisi e Decisione del Bot:*\n{stato}"
