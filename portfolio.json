@@ -21,5 +21,9 @@
     "ultima_transazione_timestamp": 1784980208,
     "prezzo_acquisto": 0.0,
     "saldo_usd": 10000.0,
-    "lotti": []
+    "lotti": [],
+    "ultima_attesa": {
+        "prezzo": 64050.0,
+        "timestamp": "2026-07-25T13:42:59.511412+00:00"
+    }
 }
