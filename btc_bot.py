@@ -45,10 +45,10 @@ def salva_portafoglio(portafoglio):
 
 # ==================== RECUPERO DATI DI MERCATO ====================
 def ottieni_dati_binance():
-    """Scarica le candele storiche a 15 minuti da Binance per BTC/USDT."""
-    url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=120"
+    """Scarica le candele storiche a 15 minuti da Binance per BTC/USDT con limite esteso a 150."""
+    url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=150"
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         data = response.json()
         
         df = pd.DataFrame(data, columns=[
