@@ -20,7 +20,7 @@ CAPITALE_INIZIALE = 10000.0
 CAPITALE_PER_LOTTO = 2500.0   
 MAX_LOTTI = 4                 
 
-FEE_PERCENTUALE = 0.001       # 0.10% commissione reale Taker
+FEE_PERCENTUALE = 0.001       # 0.10% commissione reale Taker (Binance/Coinbase)
 MAX_DAILY_DRAWDOWN_PCT = 5.0  
 
 # ==================== GESTIONE PORTAFOGLIO & BACKUP ====================
@@ -87,7 +87,7 @@ def registra_su_google_sheets(dati_transazione):
     except Exception as e:
         print(f"Errore invio dati a Google Sheets: {e}")
 
-# ==================== RECUPERO DATI & TIMEFRAME MACRO ====================
+# ==================== RECUPERO DATI & REGIME DI MERCATO ====================
 def ottieni_dati_coinbase():
     url = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -102,13 +102,11 @@ def ottieni_dati_coinbase():
                     df[col] = df[col].astype(float)
                 df['Datetime'] = pd.to_datetime(df['Time'], unit='s', utc=True)
                 
-                # Creazione simulata timeframe 15m per filtro macro robusto
+                # Timeframe 15m simulato per trend macro
                 df_15m = df.set_index('Datetime').resample('15min').agg({
                     'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
                 }).dropna().reset_index()
                 df_15m['ema_macro_15m'] = df_15m['Close'].ewm(span=50, adjust=False).mean()
-                
-                # Uniamo l'ultimo valore macro 15m al dataframe principale
                 df['ema_macro_15m'] = df_15m['ema_macro_15m'].iloc[-1] if len(df_15m) > 0 else df['Close'].mean()
                 return df
     except Exception as e:
@@ -136,7 +134,7 @@ def ottieni_dati_coinbase():
 
     return None
 
-# ==================== INDICATORI TECNICI ====================
+# ==================== INDICATORI QUANTITATIVI ====================
 def calcola_rsi(serie, periodo=14):
     delta = serie.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=periodo).mean()
@@ -152,7 +150,7 @@ def calcola_atr(df, periodo=14):
     return tr.rolling(window=periodo).mean()
 
 # ==================== GRAFICO A DUE PANNELLI ====================
-def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
+def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, regime_mercato):
     try:
         fig = plt.figure(figsize=(10, 7.5), facecolor='white')
         gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.3])
@@ -186,7 +184,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
                      color='black', fontsize=9, fontweight='bold',
                      bbox=dict(boxstyle='round,pad=0.25', fc='#f0f0f0', ec='#26a69a', alpha=0.9))
 
-        ax1.set_title('BTC-USD | Profit-Boosted Bot (Enhanced Targets)', color='black', fontsize=13, fontweight='bold', pad=12)
+        ax1.set_title(f'BTC-USD | Quant Bot (Regime: {regime_mercato})', color='black', fontsize=13, fontweight='bold', pad=12)
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#e0e0e0', linestyle=':', alpha=0.7)
         
@@ -199,7 +197,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
         ax2.set_facecolor('#f4f4f4')
         ax2.axis('off')
         
-        info_testo = f" 📊  PROFIT-BOOST DASHBOARD\n • Prezzo: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato: {stato_testo}"
+        info_testo = f" 📊  QUANT DASHBOARD\n • Prezzo: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}    |    • Regime: {regime_mercato}\n • Stato: {stato_testo}"
         ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace',
                  verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
 
@@ -233,7 +231,7 @@ def invia_messaggio_telegram(testo, chart_path=None):
 
 # ==================== LOGICA PRINCIPALE DEL BOT ====================
 def esegui_bot():
-    print("Avvio esecuzione Profit-Boosted Bot...")
+    print("Avvio esecuzione Quant Bot (Adaptive Regime & Volume Flow)...")
     df = ottieni_dati_coinbase()
     if df is None or len(df) < 100:
         print("Dati insufficienti dalle API.")
@@ -243,6 +241,9 @@ def esegui_bot():
     df['ema_lenta'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['rsi'] = calcola_rsi(df['Close'], 14)
     df['atr'] = calcola_atr(df, 14)
+    
+    # Analisi Volumi (Media mobile dei volumi a 20 periodi)
+    df['volume_ma'] = df['Volume'].rolling(window=20).mean()
 
     ultimo_prezzo = df['Close'].iloc[-1]
     rsi_attuale = df['rsi'].iloc[-1] if not np.isnan(df['rsi'].iloc[-1]) else 50.0
@@ -250,6 +251,13 @@ def esegui_bot():
     ema_v = df['ema_veloce'].iloc[-1]
     ema_l = df['ema_lenta'].iloc[-1]
     ema_macro_15m = df['ema_macro_15m'].iloc[-1]
+    volume_attuale = df['Volume'].iloc[-1]
+    volume_medio = df['volume_ma'].iloc[-1] if not np.isnan(df['volume_ma'].iloc[-1]) else volume_attuale
+
+    # Riconoscimento Regime di Mercato
+    regime_mercato = "RANGE (Laterale)"
+    if abs(ema_v - ema_l) > (atr_attuale * 0.5):
+        regime_mercato = "TREND (Direzionale)"
 
     portafoglio = carica_portafoglio()
     lotti = portafoglio.get("lotti", [])
@@ -310,16 +318,16 @@ def esegui_bot():
 
     azione_eseguita = False
     messaggio_notifica = ""
-    stato_dashboard = f"Pos ({lotti_attivi}/{MAX_LOTTI}) | P&L: {profitto_P_L:+.2f}% | Target: +1.2%+"
+    stato_dashboard = f"Pos ({lotti_attivi}/{MAX_LOTTI}) | P&L: {profitto_P_L:+.2f}% | Regime: {regime_mercato}"
 
     tempo_ultima_op = portafoglio.get("ultima_operazione_time", 0)
     puoi_operare = (timestamp_attuale - tempo_ultima_op) >= 180
 
-    # --- 1. TAKE PROFIT POTENZIATO (Target dinamico alzato a ~1.2%+ per profitti reali più alti) ---
+    # --- 1. TAKE PROFIT DINAMICO IN BASE AL REGIME ---
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
-        # Obiettivo di guadagno minimo alzato per evitare micro-scalp ininfluenti
-        soglia_profitto_richiesta = 1.2 if lotti_attivi == 1 else 1.0
-        condizione_take_profit = (profitto_P_L >= soglia_profitto_richiesta) or (rsi_attuale > 72)
+        # Se siamo in trend lasciamo correre di più (+1.5%), in range chiudiamo prima (+1.1%)
+        soglia_profitto_richiesta = 1.5 if regime_mercato == "TREND (Direzionale)" else 1.1
+        condizione_take_profit = (profitto_P_L >= soglia_profitto_richiesta) or (rsi_attuale > 74)
         
         if condizione_take_profit:
             lotti_ordinati = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)
@@ -336,10 +344,10 @@ def esegui_bot():
             portafoglio["ultima_operazione_time"] = timestamp_attuale
             
             messaggio_notifica = (
-                f"🚀 *TAKE PROFIT POTENZIATO (Lotto #{lotto_da_vendere['id']})* 🚀\n\n"
+                f"🚀 *TAKE PROFIT QUANT ({regime_mercato})* 🚀\n\n"
+                f"• Lotto chiuso: #{lotto_da_vendere['id']}\n"
                 f"• Prezzo Vendita: ${ultimo_prezzo:,.2f}\n"
-                f"• Performance Lotto: {profitto_P_L:+.2f}%\n"
-                f"• Profitto Netto Reale: ${profitto_lotto:+,.2f} USD\n"
+                f"• Profitto Netto Reale: ${profitto_lotto:+,.2f} USD ({profitto_P_L:+.2f}%)\n"
                 f"• Saldo USD: ${portafoglio['saldo_usd']:,.2f}\n"
                 f"• Lotti rimanenti: {len(portafoglio['lotti'])}/{MAX_LOTTI}"
             )
@@ -351,7 +359,7 @@ def esegui_bot():
                 "prezzo": ultimo_prezzo,
                 "quantita": lotto_da_vendere['quantita'],
                 "profitto": profitto_lotto,
-                "motivazione": "Take Profit Potenzio (>1.2%)"
+                "motivazione": f"Take Profit Quant ({regime_mercato})"
             })
 
     # --- 2. STOP LOSS / PROFIT LOCKDOWN ---
@@ -384,10 +392,10 @@ def esegui_bot():
                 "prezzo": ultimo_prezzo,
                 "quantita": quantita_totale,
                 "profitto": profitto_operazione,
-                "motivazione": "Stop Lockdown"
+                "motivazione": "Stop Lockdown Quant"
             })
 
-    # --- 3. INGRESSI CON FILTRO MACRO 15M ---
+    # --- 3. INGRESSI CON FILTRI QUANTITATIVI (RSI + Volume Flow + Macro) ---
     if puoi_operare and not azione_eseguita and not blocco_attivo_drawdown:
         saldo_corrente = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
         
@@ -400,12 +408,14 @@ def esegui_bot():
 
         capitale_lotto_dinamico = CAPITALE_PER_LOTTO * fattore_size
 
-        # Filtro macro potenziato: il prezzo deve essere sopra la EMA 15m o in forte ipervenduto
+        # Filtro Volume: confermiamo l'interesse di mercato se il volume è almeno il 70% della media o c'è forte ipervenduto
+        volume_confermato = volume_attuale >= (volume_medio * 0.7)
         condizione_rsi_scarico = rsi_attuale < 35
         trend_macro_ok = ultimo_prezzo > ema_macro_15m
-        condizione_trend = (ema_v > ema_l) and trend_macro_ok
+        
+        condizione_ingresso_valida = (condizione_rsi_scarico or (ema_v > ema_l and trend_macro_ok)) and volume_confermato
 
-        if lotti_attivi == 0 and (condizione_rsi_scarico or condizione_trend):
+        if lotti_attivi == 0 and condizione_ingresso_valida:
             costo_netto_lotto = capitale_lotto_dinamico
             fee_ingresso = costo_netto_lotto * FEE_PERCENTUALE
             costo_totale_con_fee = costo_netto_lotto + fee_ingresso
@@ -422,15 +432,15 @@ def esegui_bot():
                 portafoglio["ultima_operazione_time"] = timestamp_attuale
                 
                 lotti_attivi = 1
-                motivo_ingresso = "RSI scarico (<35) + Macro 15m" if condizione_rsi_scarico else "Trend Rialzista Macro"
+                motivo_ingresso = f"Ingresso Quant ({regime_mercato} + Volumi OK)"
                 
                 messaggio_notifica = (
-                    f"🟢 *APERTURA PRIMO LOTTO POTENZIATO (#1/{MAX_LOTTI})* 🟢\n\n"
+                    f"🟢 *APERTURA LOTTO QUANT (#1/{MAX_LOTTI})* 🟢\n\n"
                     f"• Prezzo Entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Spesa (fee incluse): ${costo_totale_con_fee:,.2f} USD\n"
                     f"• Quantità: {quantita:.5f} BTC\n"
                     f"• Saldo USD: ${portafoglio['saldo_usd']:,.2f}\n\n"
-                    f"🔍 *Motivo:* {motivo_ingresso}"
+                    f"🔍 *Analisi:* {motivo_ingresso} (RSI: {rsi_attuale:.1f})"
                 )
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
@@ -484,17 +494,17 @@ def esegui_bot():
                         "prezzo": ultimo_prezzo,
                         "quantita": quantita,
                         "profitto": 0.0,
-                        "motivazione": "Incremento ATR + Macro OK"
+                        "motivazione": "Incremento ATR Dinamico"
                     })
 
     # --- REPORT PERIODICO ---
     tempo_ultimo_report = portafoglio.get("ultimo_report_time", 0)
     puoi_inviare_report = (timestamp_attuale - tempo_ultimo_report) >= 50
 
-    if not azione_eseguita and puoi_inviare_report:
-        motivo_attesa = f"RSI attuale ({rsi_attuale:.1f}) in attesa di profitto target (>1.2%)."
+    if not azione_eseguita and puoi_invia_report:
+        motivo_attesa = f"Mercato in fase {regime_mercato} (RSI: {rsi_attuale:.1f})."
         if lotti_attivi > 0:
-            motivo_attesa = f"Posizione attiva al {profitto_P_L:+.2f}% (Target: +1.2%+)."
+            motivo_attesa = f"Posizione attiva al {profitto_P_L:+.2f}% (Regime: {regime_mercato})."
 
         dettagli_posizioni = ""
         if lotti_attivi > 0:
@@ -505,8 +515,9 @@ def esegui_bot():
             )
 
         messaggio_notifica = (
-            f"📈 *REPORT PROFIT-BOOST* 📈\n\n"
+            f"📈 *REPORT QUANT BOT* 📈\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n"
+            f"• Regime: {regime_mercato}\n"
             f"• RSI: {rsi_attuale:.1f} | ATR: ${atr_attuale:.2f}\n\n"
             f"{dettagli_posizioni}"
             f"• Stato: {motivo_attesa}"
@@ -514,7 +525,7 @@ def esegui_bot():
         portafoglio["ultimo_report_time"] = timestamp_attuale
         salva_portafoglio(portafoglio)
 
-    chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard)
+    chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, regime_mercato)
     
     if azione_eseguita or puoi_inviare_report:
         invia_messaggio_telegram(messaggio_notifica, chart_path)
