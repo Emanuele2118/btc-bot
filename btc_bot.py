@@ -101,13 +101,14 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO OTTIMIZZATA & PULITA ====================
+# ==================== GENERAZIONE GRAFICO CRISTALLINA (ULTIMI MINUTI) ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_correnti, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
-        fig, ax1 = plt.subplots(figsize=(11, 7), facecolor='white')
+        fig, ax1 = plt.subplots(figsize=(12, 7), facecolor='white')
         ax1.set_facecolor('white')
         
-        dati_plot = df.tail(90).copy().reset_index(drop=True)
+        # Limitiamo a 35 candele per garantire che siano larghe e perfettamente visibili
+        dati_plot = df.tail(35).copy().reset_index(drop=True)
         x_dates = dati_plot['Datetime']
         x_nums = mdates.date2num(x_dates)
         
@@ -117,64 +118,62 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             h = dati_plot['High'].iloc[i]
             l = dati_plot['Low'].iloc[i]
             
-            colore = '#00897b' if c >= o else '#8e24aa'
+            colore = '#00b0ff' if c >= o else '#ff1744' # Colori forti: azzurro rialzista, rosso ribassista
             
-            ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1, zorder=1)
+            ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1.5, zorder=1)
             bottom = min(o, c)
-            height = abs(c - o) if abs(c - o) > 0 else 0.01
-            ax1.bar(x_nums[i], height, bottom=bottom, color=colore, width=0.0004, zorder=2)
+            height = abs(c - o) if abs(c - o) > 0 else 0.5
+            ax1.bar(x_nums[i], height, bottom=bottom, color=colore, width=0.0006, zorder=2)
 
-        ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#fb8c00', linewidth=1.2, linestyle='--')
-        ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3949ab', linewidth=1.2, linestyle='--')
+        ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9', color='#ff9100', linewidth=2, linestyle='--')
+        ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50', color='#651fff', linewidth=2, linestyle='--')
         
-        # Livelli strategici attivi
+        # Livelli strategici
         if prezzo_medio > 0:
-            ax1.axhline(y=prezzo_medio, color='#0288d1', linestyle='-.', linewidth=1.5, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
+            ax1.axhline(y=prezzo_medio, color='#00e676', linestyle='-.', linewidth=2, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
             prezzo_sl = prezzo_medio * (1 + (stop_loss_perc / 100.0))
-            colore_sl = '#2e7d32' if stop_loss_perc >= 0 else '#c62828'
-            etichetta_sl = f'Stop/Lockdown ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}'
-            ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=1.8, alpha=0.9, label=etichetta_sl)
+            colore_sl = '#00e676' if stop_loss_perc >= 0 else '#d50000'
+            ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=2, alpha=0.9, label=f'Stop/Lock ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}')
 
-        # Lotti correnti
+        # Lotti attivi
         if lotti_correnti:
             for lotto in lotti_correnti:
                 p_entrata = lotto.get("prezzo_entrata")
                 id_lotto = lotto.get("id")
-                ax1.axhline(y=p_entrata, color='#ffb300', linestyle=':', alpha=0.6, linewidth=1)
-                ax1.text(x_nums[2], p_entrata, f' L{id_lotto} (${p_entrata:,.2f})', color='#b26a00', fontsize=8, fontweight='bold', va='bottom')
+                ax1.axhline(y=p_entrata, color='#ffd600', linestyle=':', alpha=0.8, linewidth=1.5)
+                ax1.text(x_nums[1], p_entrata, f' LOTTO #{id_lotto} (${p_entrata:,.2f})', color='#ffab00', fontsize=9, fontweight='bold', va='bottom')
 
-        # Prezzo attuale evidenziato a destra
+        # Prezzo corrente evidenziato a destra
         ultimo_x = x_nums[-1]
-        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00897b', s=60, zorder=5)
+        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00b0ff', s=80, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
                      xy=(ultimo_x, prezzo_attuale), 
-                     xytext=(-70, 15), textcoords='offset points',
-                     color='black', fontsize=9, fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.3', fc='#f5f5f5', ec='#00897b', alpha=0.9))
+                     xytext=(-80, 20), textcoords='offset points',
+                     color='black', fontsize=10, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.4', fc='#ffffff', ec='#00b0ff', alpha=0.95))
 
-        ax1.set_title('BTC-USD | Profit Lockdown & Strategy Map (1m)', color='black', fontsize=13, fontweight='bold', pad=15)
-        ax1.tick_params(colors='black', labelsize=9)
-        ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.5)
+        ax1.set_title('BTC-USD | Strategia 1m (Zoom Operativo)', color='black', fontsize=14, fontweight='bold', pad=15)
+        ax1.tick_params(colors='black', labelsize=10)
+        ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.7)
         
-        # Gestione pulita delle date sull'asse X (evita sovrapposizioni)
+        # Asse X formattato strettamente sui minuti
         ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        ax1.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
+        ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=5))
         fig.autofmt_xdate(rotation=0, ha='center')
         
         for spine in ax1.spines.values():
-            spine.set_color('#cccccc')
+            spine.set_color('#b0bec5')
             
-        # Legenda in alto a sinistra
-        ax1.legend(loc='upper left', facecolor='#fafafa', edgecolor='#cccccc', labelcolor='black', fontsize=8, framealpha=0.9)
+        ax1.legend(loc='upper left', facecolor='#f5f5f5', edgecolor='#b0bec5', labelcolor='black', fontsize=9, framealpha=0.95)
 
-        # Pannello di controllo pulito dentro il grafico in basso a sinistra
-        props = dict(boxstyle='round,pad=0.6', facecolor='#f8f9fa', edgecolor='#ced4da', alpha=0.95)
-        info_testo = f"PANNELLO CONTROLLO:\n• Prezzo: ${prezzo_attuale:,.2f} | RSI: {rsi_attuale:.1f}\n• {stato_testo}"
-        ax1.text(0.02, 0.03, info_testo, transform=ax1.transAxes, fontsize=8.5, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
+        # Pannello informativo esterno/superiore ben leggibile
+        props = dict(boxstyle='round,pad=0.8', fc='#eceff1', ec='#b0bec5', alpha=0.95)
+        info_testo = f"PANNELLO CONTROLLO BOT (1m):\n• Prezzo Corrente: ${prezzo_attuale:,.2f}   |   RSI: {rsi_attuale:.1f}\n• {stato_testo}"
+        ax1.text(0.02, 0.02, info_testo, transform=ax1.transAxes, fontsize=9.5, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
 
         plt.tight_layout()
         chart_path = 'temp_chart.png'
-        plt.savefig(chart_path, dpi=150, facecolor='white', edgecolor='none')
+        plt.savefig(chart_path, dpi=160, facecolor='white', edgecolor='none')
         plt.close()
         return chart_path
     except Exception as e:
