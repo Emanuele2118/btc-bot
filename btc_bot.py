@@ -101,7 +101,7 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO STILE ORIGINALE ====================
+# ==================== GENERAZIONE GRAFICO (VERDE / VIOLA) ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_correnti, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
         fig, ax1 = plt.subplots(figsize=(12, 8), facecolor='white')
@@ -117,7 +117,8 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             h = dati_plot['High'].iloc[i]
             l = dati_plot['Low'].iloc[i]
             
-            colore = '#00b0ff' if c >= o else '#7b1fa2' # Azzurro e viola scuro come nello stile originale
+            # Candele Verdi se rialziste, Viola se ribassiste
+            colore = '#00c853' if c >= o else '#7b1fa2'
             
             ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1.2, zorder=1)
             bottom = min(o, c)
@@ -141,12 +142,12 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
                 ax1.text(x_nums[1], p_entrata, f' LOTTO #{id_lotto} (${p_entrata:,.2f})', color='#ff8f00', fontsize=9, fontweight='bold', va='bottom')
 
         ultimo_x = x_nums[-1]
-        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00b0ff', s=70, zorder=5)
+        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00c853', s=70, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
                      xy=(ultimo_x, prezzo_attuale), 
                      xytext=(-75, 15), textcoords='offset points',
                      color='black', fontsize=9.5, fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.3', fc='#ffffff', ec='#00b0ff', alpha=0.95))
+                     bbox=dict(boxstyle='round,pad=0.3', fc='#ffffff', ec='#00c853', alpha=0.95))
 
         ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='black', fontsize=13, fontweight='bold', pad=15)
         ax1.tick_params(colors='black', labelsize=9.5)
@@ -161,7 +162,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             
         ax1.legend(loc='upper left', facecolor='#f9f9f9', edgecolor='#b0bec5', labelcolor='black', fontsize=8.5, framealpha=0.95)
 
-        # Pannello di controllo posizionato in basso a sinistra esattamente come nell'immagine di riferimento
+        # Pannello di controllo posizionato in basso a sinistra
         props = dict(boxstyle='square,pad=0.6', fc='#eceff1', ec='#b0bec5', alpha=0.95)
         info_testo = f"📌  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n• Prezzo Corrente: ${prezzo_attuale:,.2f}   |   • RSI: {rsi_attuale:.1f}\n• Stato Operativo: {stato_testo}"
         ax1.text(0.01, 0.02, info_testo, transform=ax1.transAxes, fontsize=9, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
@@ -346,7 +347,7 @@ def esegui_bot():
             )
 
         messaggio_notifica = (
-            f"📈 *REPORT PROFIT MAXIMIZER (1m)* 📈\n\n"
+            f"📈 *REPORT DI MERCATO* 📈\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n"
             f"• RSI: {rsi_attuale:.1f} | ATR: ${atr_attuale:.2f}\n\n"
             f"{dettagli_posizioni}"
