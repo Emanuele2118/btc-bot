@@ -43,29 +43,41 @@ def salva_portafoglio(portafoglio):
     except Exception as e:
         print(f"Errore nel salvataggio del portafoglio: {e}")
 
-# ==================== RECUPERO DATI DI MERCATO ====================
+# ==================== RECUPERO DATI DI MERCATO CON FALLBACK ====================
 def ottieni_dati_binance():
-    """Scarica le candele storiche a 15 minuti da Binance per BTC/USDT con limite esteso a 150."""
+    """Scarica i dati storici da Binance, con fallback su CoinGecko se Binance fallisce."""
     url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=150"
     try:
-        response = requests.get(url, timeout=15)
-        data = response.json()
-        
-        df = pd.DataFrame(data, columns=[
-            'Time', 'Open', 'High', 'Low', 'Close', 'Volume',
-            'CloseTime', 'QuoteAssetVolume', 'NumberOfTrades',
-            'TakerBuyBaseAssetVolume', 'TakerBuyQuoteAssetVolume', 'Ignore'
-        ])
-        
-        # Conversione tipi numerici
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df[col] = df[col].astype(float)
-            
-        df['Time'] = df['Time'] / 1000.0 # Converti in secondi
-        return df
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if len(data) >= 50:
+                df = pd.DataFrame(data, columns=[
+                    'Time', 'Open', 'High', 'Low', 'Close', 'Volume',
+                    'CloseTime', 'QuoteAssetVolume', 'NumberOfTrades',
+                    'TakerBuyBaseAssetVolume', 'TakerBuyQuoteAssetVolume', 'Ignore'
+                ])
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                    df[col] = df[col].astype(float)
+                df['Time'] = df['Time'] / 1000.0
+                return df
     except Exception as e:
-        print(f"Errore nel recupero dati da Binance: {e}")
-        return None
+        print(f"Errore connessione Binance: {e}")
+
+    print("Tentativo fallback su CoinGecko...")
+    try:
+        url_cg = "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=7"
+        resp = requests.get(url_cg, timeout=10)
+        if resp.status_code == 200:
+            cg_data = resp.json()
+            df = pd.DataFrame(cg_data, columns=['Time', 'Open', 'High', 'Low', 'Close'])
+            df['Time'] = df['Time'] / 1000.0
+            df['Volume'] = 1000.0
+            return df
+    except Exception as e:
+        print(f"Errore anche nel fallback CoinGecko: {e}")
+        
+    return None
 
 # ==================== INDICATORI TECNICI ====================
 def calcola_rsi(serie, periodo=14):
@@ -199,8 +211,8 @@ def invia_messaggio_telegram(testo, chart_path=None):
 def esegui_bot():
     print("Avvio esecuzione bot BTC...")
     df = ottieni_dati_binance()
-    if df is None or len(df) < 50:
-        print("Dati insufficienti da Binance.")
+    if df is None or len(df) < 30:
+        print("Dati insufficienti dalle API.")
         return
 
     # Calcolo indicatori
@@ -210,8 +222,8 @@ def esegui_bot():
     df['atr'] = calcola_atr(df, 14)
 
     ultimo_prezzo = df['Close'].iloc[-1]
-    rsi_attuale = df['rsi'].iloc[-1]
-    atr_attuale = df['atr'].iloc[-1]
+    rsi_attuale = df['rsi'].iloc[-1] if not np.isnan(df['rsi'].iloc[-1]) else 50.0
+    atr_attuale = df['atr'].iloc[-1] if not np.isnan(df['atr'].iloc[-1]) else (ultimo_prezzo * 0.01)
     volatilita_pct = (atr_attuale / ultimo_prezzo) * 100
 
     # Carica stato portafoglio persistente
@@ -228,7 +240,6 @@ def esegui_bot():
     stop_loss_effettivo_perc = -2.0 # Default -2%
     if lotti_attivi > 0:
         performance_corrente = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100
-        # Se siamo in profitto, attiviamo un lockdown progressivo
         if performance_corrente > 1.5:
             stop_loss_effettivo_perc = +0.5 # Profitto garantito del +0.5%
         elif performance_corrente > 3.0:
@@ -242,11 +253,10 @@ def esegui_bot():
     if lotti_attivi > 0:
         soglia_sl_prezzo = prezzo_medio * (1 + (stop_loss_effettivo_perc / 100.0))
         if ultimo_prezzo <= soglia_sl_prezzo:
-            # Chiusura lotti per stop loss / lockdown
             ricavo = quantita_totale * ultimo_prezzo
             profitto_operazione = ricavo - spesa_totale
             portafoglio["saldo_usd"] += ricavo
-            portafoglio["lotti"] = [] # Svuota i lotti
+            portafoglio["lotti"] = []
             
             messaggio_notifica = (
                 f"🚨 *CHIUSURA POSIZIONE (STOP / PROFIT LOCKDOWN)* 🚨\n\n"
@@ -261,7 +271,6 @@ def esegui_bot():
 
     # --- CONTROLLO INGRESSO (ACQUISTO LOTTI) ---
     if not azione_eseguita:
-        # Condizione Lotto 1: Nessun lotto attivo e RSI in ipervenduto o incrocio EMA rialzista
         if lotti_attivi == 0 and (rsi_attuale < 35 or df['ema_veloce'].iloc[-1] > df['ema_lenta'].iloc[-1]):
             if portafoglio["saldo_usd"] >= CAPITALE_PER_LOTTO:
                 quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
@@ -286,8 +295,7 @@ def esegui_bot():
                 )
                 azione_eseguita = True
 
-        # Condizione Lotto 2: Abbiamo già 1 lotto e il prezzo scende ulteriormente (Mediazione / Profit Lockdown)
-        elif lotti_attivi == 1 and ultimo_prezzo <= (prezzo_medio * 0.985): # Sconto del 1.5% sul prezzo medio
+        elif lotti_attivi == 1 and ultimo_prezzo <= (prezzo_medio * 0.985):
             if portafoglio["saldo_usd"] >= CAPITALE_PER_LOTTO:
                 quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
                 portafoglio["saldo_usd"] -= CAPITALE_PER_LOTTO
@@ -298,7 +306,6 @@ def esegui_bot():
                     "spesa": CAPITALE_PER_LOTTO
                 })
                 
-                # Aggiorna calcoli post secondo lotto
                 quantita_totale = sum(l['quantita'] for l in portafoglio["lotti"])
                 spesa_totale = sum(l['spesa'] for l in portafoglio["lotti"])
                 prezzo_medio = spesa_totale / quantita_totale
@@ -309,16 +316,14 @@ def esegui_bot():
                     f"• Prezzo entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Quantità acquistata: {quantita:.5f} BTC\n"
                     f"• Spesa totale lorda: ${spesa_totale:,.2f}\n"
-                    f"• Perché questa scelta: Ribasso controllato (ATR {volatilita_pct:.2f}%), esposizione ottimizzata. Aggiunto lotto #2 bilanciando il rischio.\n\n"
+                    f"• Perché questa scelta: Ribasso controllato (ATR {volatilita_pct:.2f}%). Aggiunto lotto #2.\n\n"
                     f"📊 Lotti attivi totali: 2\n"
                     f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
 
-    # Salva il portafoglio aggiornato su file JSON
     salva_portafoglio(portafoglio)
 
-    # Se non ci sono stati eventi straordinari, invia il report di mercato periodico con lo stato corrente
     if not azione_eseguita:
         performance_netta = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 else 0.0
         messaggio_notifica = (
@@ -329,13 +334,10 @@ def esegui_bot():
             f"• Quantità totale BTC: {quantita_totale:.5f}\n"
             f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
             f"• Performance netta: {performance_netta:+.2f}%\n"
-            f"• Protezione attiva: Stop Loss dinamico a {stop_loss_effettivo_perc:+.2f}% (Supporti strutturali)."
+            f"• Protezione attiva: Stop Loss dinamico a {stop_loss_effettivo_perc:+.2f}%."
         )
 
-    # Genera il grafico aggiornato passando i livelli chiave
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, prezzo_medio, stop_loss_effettivo_perc)
-    
-    # Invia notifica su Telegram con immagine e grafico allegato
     invia_messaggio_telegram(messaggio_notifica, chart_path)
     print("Esecuzione completata con successo.")
 
