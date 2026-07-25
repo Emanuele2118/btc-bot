@@ -54,10 +54,8 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
         ax2.axis('off')
         
         info_testo = (
-            f" 📊  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR
-"
-            f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}
-"
+            f" 📊  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n"
+            f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n"
             f" • Stato Operativo: {stato_testo}"
         )
         
@@ -230,8 +228,7 @@ def run_bot():
         minimo_recente = float(df['Low'].tail(10).min())
         stop_loss_strutturale_perc = min(-2.0, ((minimo_recente - prezzo_medio) / prezzo_medio) * 100) if prezzo_medio > 0 else -2.0
 
-        # --- NUOVA LOGICA: PROFIT LOCKDOWN DINAMICO ---
-        # Se il profitto tocca soglie elevate, innalziamo la soglia di Stop Loss per bloccare i profitti guadagnati
+        # PROFIT LOCKDOWN DINAMICO
         stop_loss_effettivo_perc = stop_loss_strutturale_perc
         motivo_stop_loss = "Supporti strutturali"
         
@@ -263,7 +260,7 @@ def run_bot():
                         nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Dopo l'acquisto il mercato è sceso temporaneamente del {perc_diff:.2f}%."
                 dati["ultima_operazione"] = None
 
-        # 1. ACQUISTO CON POSITION SIZING DINAMICO (Adattato alla volatilità ATR)
+        # 1. ACQUISTO CON POSITION SIZING DINAMICO
         capitale_totale = dati["usd"] + (tot_btc * ultimo_prezzo)
         if rsi_attuale < 38 and dati["usd"] > 100 and trend_favorevole and cooldown_superato:
             if volatilita_pct > 0.4:
