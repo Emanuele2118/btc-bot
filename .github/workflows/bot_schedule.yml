@@ -23,12 +23,13 @@ jobs:
 
       - name: Installa librerie
         run: |
-          pip install pandas numpy requests
+          pip install pandas numpy requests matplotlib
 
       - name: Esegui script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: |
           python btc_bot.py
 
