@@ -47,7 +47,7 @@ def salva_portafoglio(portafoglio):
     try:
         with open(PORTFOLIO_FILE, 'w') as f:
             json.dump(portafoglio, f, indent=4)
-        print("Portfolio salvato correttamente in locale (verrà committato dall'Action).")
+        print("Portfolio salvato correttamente in locale.")
     except Exception as e:
         print(f"Errore nel salvataggio del portafoglio: {e}")
 
@@ -145,9 +145,10 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.5)
         
+        # Gestione pulita degli orari sull'asse X
         if 'Datetime' in dati_plot.columns:
             orari = [dt.strftime('%H:%M') for dt in dati_plot['Datetime']]
-            step = max(1, len(x) // 6)
+            step = max(1, len(x) // 7)  # Distribuisce circa 7 etichette orarie leggibili
             ax1.set_xticks(list(x)[::step])
             ax1.set_xticklabels([orari[i] for i in list(x)[::step]], fontsize=8)
         
@@ -331,9 +332,8 @@ def esegui_bot():
                 elif differenza_perc < -0.2:
                     analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Attesa prematura. Si è scelto di non mediare a ${prezzo_precedente:,.2f} ma il mercato è sceso di un ulteriore {differenza_perc:+.2f}%, mancando un'occasione di accumulo più profondo."
                 else:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Mercato laterale rispetto al controllo precedente ($ {prezzo_precedente:,.2f}). Posizioni monitorate senza variazioni di rilievo."
+                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Mercato laterale rispetto al controllo precedente (${prezzo_precedente:,.2f}). Posizioni monitorate senza variazioni di rilievo."
 
-        # Aggiorna la memoria con il prezzo e timestamp attuali
         portafoglio["ultima_attesa"] = {
             "prezzo": ultimo_prezzo,
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -344,15 +344,22 @@ def esegui_bot():
         if lotti_attivi > 0:
             motivo_attesa = f"Posizioni aperte ({lotti_attivi} lotti). Il prezzo non ha ancora raggiunto la soglia di ribasso dell'1.5% per il lotto successivo e il target di profitto non è attivo."
 
+        # Se non ci stampiamo le righe dei lotti a 0, costruiamo il blocco in modo dinamico
+        dettagli_posizioni = ""
+        if lotti_attivi > 0:
+            dettagli_posizioni = (
+                f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI} lotti\n"
+                f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
+                f"• Performance netta: {profitto_P_L:+.2f}%\n"
+            )
+
         messaggio_notifica = (
             f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n\n"
             f"{analisi_a_posteriori}\n\n"
             f"📌 *Analisi e Decisione del Bot (In Attesa):*\n"
             f"• RSI attuale: {rsi_attuale:.1f}\n"
-            f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI} lotti\n"
-            f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
-            f"• Performance netta: {profitto_P_L:+.2f}%\n"
+            f"{dettagli_posizioni}"
             f"• Motivo dell'attesa attuale: {motivo_attesa}"
         )
 
