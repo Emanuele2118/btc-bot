@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone, timedelta
 import time
-import threading
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -59,8 +58,6 @@ def carica_portafoglio():
             data["data_ultima_registrazione"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if "blocco_drawdown_fino" not in data:
             data["blocco_drawdown_fino"] = 0.0
-        if "bot_in_pausa" not in data:
-            data["bot_in_pausa"] = False
         if "storico_operazioni" not in data:
             data["storico_operazioni"] = []
         return data
@@ -73,7 +70,6 @@ def carica_portafoglio():
         "valore_iniziale_giornata": CAPITALE_INIZIALE,
         "data_ultima_registrazione": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "blocco_drawdown_fino": 0.0,
-        "bot_in_pausa": False,
         "storico_operazioni": []
     }
 
@@ -248,85 +244,10 @@ def invia_messaggio_telegram(testo, chart_path=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# ==================== ASCOLTATORE COMANDI TELEGRAM (SOLO MONITORAGGIO) ====================
-def gestisci_comandi_telegram():
-    if not TELEGRAM_BOT_TOKEN:
-        return
-    offset = 0
-    print("Avvio ascoltatore comandi Telegram (modalità protetta/autonoma)...")
-    while True:
-        try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30"
-            res = requests.get(url, timeout=35)
-            if res.status_code == 200:
-                data = res.json()
-                for result in data.get("result", []):
-                    offset = result["update_id"] + 1
-                    message = result.get("message", {})
-                    text = message.get("text", "").strip().lower()
-                    chat_id = str(message.get("chat", {}).get("id", ""))
-                    
-                    if chat_id != str(TELEGRAM_CHAT_ID):
-                        continue
-
-                    portafoglio = carica_portafoglio()
-                    risposta = ""
-                    
-                    if text == "/status":
-                        risposta = "🟢 Bot attivo e operativo regolarmente." if not portafoglio.get("bot_in_pausa") else "⏸ Bot attualmente in pausa."
-                    
-                    elif text == "/pause":
-                        portafoglio["bot_in_pausa"] = True
-                        salva_portafoglio(portafoglio)
-                        risposta = "⏸ Operatività automatica messa in pausa con successo."
-                    
-                    elif text == "/resume":
-                        portafoglio["bot_in_pausa"] = False
-                        salva_portafoglio(portafoglio)
-                        risposta = "▶️ Operatività automatica riattivata."
-                    
-                    elif text == "/sellall":
-                        lotti = portafoglio.get("lotti", [])
-                        if lotti:
-                            df_temp = ottieni_dati_coinbase()
-                            p_att = df_temp['Close'].iloc[-1] if df_temp is not None else lotti[0]['prezzo_entrata']
-                            spesa_tot = sum(l['spesa'] for l in lotti)
-                            q_tot = sum(l['quantita'] for l in lotti)
-                            ricavo_tot = (q_tot * p_att) * (1 - FEE_PERCENTUALE)
-                            profitto_tot = ricavo_tot - spesa_tot
-                            
-                            portafoglio["lotti"] = []
-                            portafoglio["saldo_usd"] = portafoglio.get("saldo_usd", CAPITALE_INIZIALE) + ricavo_tot
-                            portafoglio.setdefault("storico_operazioni", []).append(profitto_tot)
-                            salva_portafoglio(portafoglio)
-                            risposta = f"🚨 EMERGENZA: Tutte le posizioni chiuse manualmente. P&L totale: ${profitto_tot:+,.2f}"
-                        else:
-                            risposta = "ℹ️ Nessuna posizione attiva da chiudere."
-                    
-                    elif text == "/help":
-                        risposta = (
-                            "🛠 *COMANDI DISPONIBILI (MODALITÀ AUTONOMA)*\n\n"
-                            "• `/status` - Mostra lo stato del bot\n"
-                            "• `/pause` - Sospende l'operatività automatica\n"
-                            "• `/resume` - Riattiva l'operatività automatica\n"
-                            "• `/sellall` - Emergenza: chiude tutte le posizioni\n"
-                            "• `/help` - Mostra questa guida"
-                        )
-
-                    if risposta:
-                        invia_messaggio_telegram(risposta)
-        except Exception as e:
-            print(f"Errore ascoltatore comandi: {e}")
-        time.sleep(2)
-
 # ==================== LOGICA PRINCIPALE DEL BOT ====================
 def esegui_bot():
     print("Avvio ciclo Market Bot...")
     portafoglio = carica_portafoglio()
-    
-    if portafoglio.get("bot_in_pausa", False):
-        print("Bot in pausa. Operatività saltata.")
-        return
 
     df = ottieni_dati_coinbase()
     if df is None or len(df) < 100:
@@ -526,7 +447,6 @@ def esegui_bot():
         invia_messaggio_telegram(messaggio_notifica, chart_path)
 
 if __name__ == "__main__":
-    # Esegue il controllo una sola volta per ogni esecuzione di GitHub Actions
     try:
         esegui_bot()
     except Exception as e:
