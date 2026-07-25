@@ -101,13 +101,12 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO CRISTALLINA (ULTIMI MINUTI) ====================
+# ==================== GENERAZIONE GRAFICO CRISTALLINA ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_correnti, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
         fig, ax1 = plt.subplots(figsize=(12, 7), facecolor='white')
         ax1.set_facecolor('white')
         
-        # Limitiamo a 35 candele per garantire che siano larghe e perfettamente visibili
         dati_plot = df.tail(35).copy().reset_index(drop=True)
         x_dates = dati_plot['Datetime']
         x_nums = mdates.date2num(x_dates)
@@ -118,7 +117,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             h = dati_plot['High'].iloc[i]
             l = dati_plot['Low'].iloc[i]
             
-            colore = '#00b0ff' if c >= o else '#ff1744' # Colori forti: azzurro rialzista, rosso ribassista
+            colore = '#00b0ff' if c >= o else '#ff1744'
             
             ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1.5, zorder=1)
             bottom = min(o, c)
@@ -128,14 +127,12 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
         ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9', color='#ff9100', linewidth=2, linestyle='--')
         ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50', color='#651fff', linewidth=2, linestyle='--')
         
-        # Livelli strategici
         if prezzo_medio > 0:
             ax1.axhline(y=prezzo_medio, color='#00e676', linestyle='-.', linewidth=2, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
             prezzo_sl = prezzo_medio * (1 + (stop_loss_perc / 100.0))
             colore_sl = '#00e676' if stop_loss_perc >= 0 else '#d50000'
             ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=2, alpha=0.9, label=f'Stop/Lock ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}')
 
-        # Lotti attivi
         if lotti_correnti:
             for lotto in lotti_correnti:
                 p_entrata = lotto.get("prezzo_entrata")
@@ -143,7 +140,6 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
                 ax1.axhline(y=p_entrata, color='#ffd600', linestyle=':', alpha=0.8, linewidth=1.5)
                 ax1.text(x_nums[1], p_entrata, f' LOTTO #{id_lotto} (${p_entrata:,.2f})', color='#ffab00', fontsize=9, fontweight='bold', va='bottom')
 
-        # Prezzo corrente evidenziato a destra
         ultimo_x = x_nums[-1]
         ax1.scatter([ultimo_x], [prezzo_attuale], color='#00b0ff', s=80, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
@@ -152,11 +148,10 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
                      color='black', fontsize=10, fontweight='bold',
                      bbox=dict(boxstyle='round,pad=0.4', fc='#ffffff', ec='#00b0ff', alpha=0.95))
 
-        ax1.set_title('BTC-USD | Strategia 1m (Zoom Operativo)', color='black', fontsize=14, fontweight='bold', pad=15)
+        ax1.set_title('BTC-USD | Profit Maximizer & Partial Take Profit (1m)', color='black', fontsize=14, fontweight='bold', pad=15)
         ax1.tick_params(colors='black', labelsize=10)
         ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.7)
         
-        # Asse X formattato strettamente sui minuti
         ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=5))
         fig.autofmt_xdate(rotation=0, ha='center')
@@ -166,9 +161,8 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             
         ax1.legend(loc='upper left', facecolor='#f5f5f5', edgecolor='#b0bec5', labelcolor='black', fontsize=9, framealpha=0.95)
 
-        # Pannello informativo esterno/superiore ben leggibile
         props = dict(boxstyle='round,pad=0.8', fc='#eceff1', ec='#b0bec5', alpha=0.95)
-        info_testo = f"PANNELLO CONTROLLO BOT (1m):\n• Prezzo Corrente: ${prezzo_attuale:,.2f}   |   RSI: {rsi_attuale:.1f}\n• {stato_testo}"
+        info_testo = f"PROFIT MAXIMIZER (1m):\n• Prezzo: ${prezzo_attuale:,.2f}   |   RSI: {rsi_attuale:.1f}\n• {stato_testo}"
         ax1.text(0.02, 0.02, info_testo, transform=ax1.transAxes, fontsize=9.5, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
 
         plt.tight_layout()
@@ -199,9 +193,9 @@ def invia_messaggio_telegram(testo, chart_path=None):
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
-# ==================== LOGICA PRINCIPALE DEL BOT ====================
+# ==================== LOGICA PRINCIPALE (PROFIT MAXIMIZER & VENDITE PARZIALI) ====================
 def esegui_bot():
-    print("Avvio esecuzione bot BTC (1m)...")
+    print("Avvio esecuzione bot Profit Maximizer (1m)...")
     df = ottieni_dati_binance()
     if df is None or len(df) < 30:
         print("Dati insufficienti dalle API.")
@@ -224,21 +218,45 @@ def esegui_bot():
     spesa_totale = sum(l.get('spesa', 0) for l in lotti)
     prezzo_medio = (spesa_totale / quantita_totale) if quantita_totale > 0 else 0.0
 
-    stop_loss_effettivo_perc = -2.0 
+    profitto_P_L = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
+    
+    stop_loss_effettivo_perc = -2.5 
     if lotti_attivi > 0 and prezzo_medio > 0:
-        performance_corrente = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100
-        if performance_corrente > 1.5:
-            stop_loss_effettivo_perc = +0.5 
-        elif performance_corrente > 3.0:
-            stop_loss_effettivo_perc = +2.0
+        if profitto_P_L > 2.0:
+            stop_loss_effettivo_perc = +1.0 
+        elif profitto_P_L > 1.0:
+            stop_loss_effettivo_perc = 0.0
 
     azione_eseguita = False
     messaggio_notifica = ""
-    profitto_P_L = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100 if lotti_attivi > 0 and prezzo_medio > 0 else 0.0
     stato_dashboard = f"Posizioni attive ({lotti_attivi}/{MAX_LOTTI}) | P&L: {profitto_P_L:+.2f}% | SL: {stop_loss_effettivo_perc:+.1f}%"
 
-    # --- CONTROLLO USCITA (STOP LOSS / LOCKDOWN) ---
-    if lotti_attivi > 0 and prezzo_medio > 0:
+    # --- 1. GESTIONE VENDITE PARZIALI (TAKE PROFIT INCREMENTALE) ---
+    # Se abbiamo più lotti e il mercato sale, vendiamo prima il lotto più costoso/vecchio per incassare profitto e liberare capitale
+    if lotti_attivi > 1 and profitto_P_L >= 1.5:
+        # Ordiniamo i lotti per prezzo d'entrata (dal più alto al più basso per liberare prima le posizioni meno vantaggiose)
+        lotti_ordinati = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)
+        lotto_da_vendere = lotti_ordinati[0]
+        
+        ricavo_parziale = lotto_da_vendere['quantita'] * ultimo_prezzo
+        profitto_lotto = ricavo_parziale - lotto_da_vendere['spesa']
+        
+        portafoglio["saldo_usd"] = portafoglio.get("saldo_usd", CAPITALE_INIZIALE) + ricavo_parziale
+        portafoglio["lotti"] = [l for l in lotti if l['id'] != lotto_da_vendere['id']]
+        portafoglio["ultima_attesa"] = None
+        
+        messaggio_notifica = (
+            f"🎯 *VENDITA PARZIALE TAKE PROFIT (Lotto #{lotto_da_vendere['id']})* 🎯\n\n"
+            f"• Prezzo Vendita: ${ultimo_prezzo:,.2f}\n"
+            f"• Profitto realizzato sul lotto: ${profitto_lotto:+,.2f} ({((ultimo_prezzo/lotto_da_vendere['prezzo_entrata'])-1)*100:+.2f}%)\n"
+            f"• Saldo USD Aggiornato: ${portafoglio['saldo_usd']:,.2f}\n"
+            f"• Lotti rimanenti attivi: {len(portafoglio['lotti'])}/{MAX_LOTTI}"
+        )
+        azione_eseguita = True
+        salva_portafoglio(portafoglio)
+
+    # --- 2. CONTROLLO USCITA TOTALE (STOP LOSS / LOCKDOWN) ---
+    if not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
         soglia_sl_prezzo = prezzo_medio * (1 + (stop_loss_effettivo_perc / 100.0))
         if ultimo_prezzo <= soglia_sl_prezzo:
             ricavo = quantita_totale * ultimo_prezzo
@@ -248,22 +266,21 @@ def esegui_bot():
             portafoglio["ultima_attesa"] = None
             
             messaggio_notifica = (
-                f"🚨 *CHIUSURA POSIZIONE (STOP / PROFIT LOCKDOWN)* 🚨\n\n"
+                f"🚨 *CHIUSURA TOTALE (PROFIT LOCKDOWN / STOP)* 🚨\n\n"
                 f"• Prezzo Chiusura: ${ultimo_prezzo:,.2f}\n"
                 f"• Prezzo Medio Carico: ${prezzo_medio:,.2f}\n"
-                f"• Motivo: Raggiunto il livello di protezione/stop fissato al {stop_loss_effettivo_perc:+.1f}% sul prezzo medio.\n"
-                f"• Profitto/Perdita: ${profitto_operazione:+,.2f} ({((ultimo_prezzo/prezzo_medio)-1)*100:+.2f}%)\n"
-                f"• Saldo USD Aggiornato: ${portafoglio['saldo_usd']:,.2f}"
+                f"• Profitto/Perdita Totale: ${profitto_operazione:+,.2f} ({profitto_P_L:+.2f}%)\n"
+                f"• Saldo USD Disponibile: ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
             salva_portafoglio(portafoglio)
 
-    # --- CONTROLLO INGRESSO (FINO A 4 LOTTI) ---
+    # --- 3. CONTROLLO INGRESSO (DCA DINAMICA BASATA SU ATR) ---
     if not azione_eseguita:
         saldo_corrente = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
         
-        # Primo lotto
-        if lotti_attivi == 0 and (rsi_attuale < 35 or df['ema_veloce'].iloc[-1] > df['ema_lenta'].iloc[-1]):
+        # Primo lotto: RSI basso o trend a favore
+        if lotti_attivi == 0 and (rsi_attuale < 38 or df['ema_veloce'].iloc[-1] > df['ema_lenta'].iloc[-1]):
             if saldo_corrente >= CAPITALE_PER_LOTTO:
                 quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
                 portafoglio["saldo_usd"] = saldo_corrente - CAPITALE_PER_LOTTO
@@ -275,84 +292,56 @@ def esegui_bot():
                 })
                 portafoglio["ultima_attesa"] = None
                 
-                prezzo_medio = ultimo_prezzo
                 lotti_attivi = 1
                 messaggio_notifica = (
                     f"🟢 *APERTURA PRIMO LOTTO (#1/{MAX_LOTTI})* 🟢\n\n"
                     f"• Prezzo Entrata: ${ultimo_prezzo:,.2f}\n"
                     f"• Quantità: {quantita:.5f} BTC\n"
-                    f"• Spesa: ${CAPITALE_PER_LOTTO:,.2f}\n"
-                    f"• Motivo: RSI a {rsi_attuale:.1f} (in zona d'ingresso favorevole) e incrocio EMA veloce sopra la lenta.\n\n"
-                    f"📊 Lotti attivi: 1/{MAX_LOTTI}\n"
-                    f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
+                    f"• Condizione: RSI a {rsi_attuale:.1f} / Trend EMA favorevole.\n"
+                    f"• Saldo USD Residuo: ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
 
-        # Lotti successivi (fino a 4) se il prezzo scende dell'1.5% dal prezzo medio
-        elif 0 < lotti_attivi < MAX_LOTTI and prezzo_medio > 0 and ultimo_prezzo <= (prezzo_medio * 0.985):
-            if saldo_corrente >= CAPITALE_PER_LOTTO:
-                nuovo_id = lotti_attivi + 1
-                quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
-                portafoglio["saldo_usd"] = saldo_corrente - CAPITALE_PER_LOTTO
-                portafoglio["lotti"].append({
-                    "id": nuovo_id,
-                    "prezzo_entrata": ultimo_prezzo,
-                    "quantita": quantita,
-                    "spesa": CAPITALE_PER_LOTTO
-                })
-                portafoglio["ultima_attesa"] = None
-                
-                quantita_totale = sum(l.get('quantita', 0) for l in portafoglio["lotti"])
-                spesa_totale = sum(l.get('spesa', 0) for l in portafoglio["lotti"])
-                prezzo_medio = spesa_totale / quantita_totale
-                lotti_attivi = nuovo_id
-                
-                messaggio_notifica = (
-                    f"🟢 *INCREMENTO POSIZIONE: LOTTO (#{nuovo_id}/{MAX_LOTTI})* 🟢\n\n"
-                    f"• Prezzo Ingresso Lotto: ${ultimo_prezzo:,.2f}\n"
-                    f"• Motivo: Il prezzo è sceso del {((ultimo_prezzo/prezzo_medio)-1)*100:.2f}% rispetto al prezzo medio di carico, attivando la mediazione controllata del lotto #{nuovo_id}.\n"
-                    f"• Nuovo Prezzo Medio: ${prezzo_medio:,.2f}\n"
-                    f"• Spesa Totale Investita: ${spesa_totale:,.2f}\n\n"
-                    f"📊 Lotti attivi totali: {nuovo_id}/{MAX_LOTTI}\n"
-                    f"💰 Saldo USD residuo: ${portafoglio['saldo_usd']:,.2f}"
-                )
-                azione_eseguita = True
-                salva_portafoglio(portafoglio)
-
-    # --- ANALISI A POSTERIORI DELL'ATTESA PRECEDENTE ---
-    analisi_a_posteriori = ""
-    ultima_attesa = portafoglio.get("ultima_attesa")
-    
-    if not azione_eseguita:
-        if ultima_attesa:
-            prezzo_precedente = ultima_attesa.get("prezzo", ultimo_prezzo)
-            differenza_perc = ((ultimo_prezzo - prezzo_precedente) / prezzo_precedente) * 100
+        # Lotti successivi (fino a 4): calcolati dinamicamente usando l'ATR per ottimizzare la mediazione al ribasso
+        elif 0 < lotti_attivi < MAX_LOTTI and prezzo_medio > 0:
+            ultimo_lotto_prezzo = lotti[-1]['prezzo_entrata']
+            # Distanza dinamica basata sulla volatilità ATR (es. almeno 1.2 volte l'ATR di distanza dall'ultimo acquisto)
+            distanza_richiesta_atr = atr_attuale * 1.2
             
-            if lotti_attivi == 0:
-                if differenza_perc < -0.2:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Ottima intuizione! Al controllo precedente il prezzo era a ${prezzo_precedente:,.2f} ed è stato evitato l'ingresso: il mercato è sceso del {differenza_perc:+.2f}%, confermando che l'attesa ha evitato un prezzo d'acquisto anticipato."
-                elif differenza_perc > 0.2:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Occasione persa. Al controllo precedente il prezzo era a ${prezzo_precedente:,.2f} e si è scelto di attendere: il mercato è salito del {differenza_perc:+.2f}%, lasciandosi sfuggire un punto d'ingresso più basso."
-                else:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Scelta di attesa prudente. Il prezzo è rimasto stabile (${prezzo_precedente:,.2f} ➔ ${ultimo_prezzo:,.2f}), confermando la fase di consolidamento."
-            else:
-                if differenza_perc > 0.2:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Scelta saggia. Si è evitato di mediare a ${prezzo_precedente:,.2f} e il mercato è risalito del {differenza_perc:+.2f}%, evitando di appesantire l'esposizione in un momento sfavorevole."
-                elif differenza_perc < -0.2:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Attesa prematura. Si è scelto di non mediare a ${prezzo_precedente:,.2f} ma il mercato è sceso di un ulteriore {differenza_perc:+.2f}%, mancando un'occasione di accumulo più profondo."
-                else:
-                    analisi_a_posteriori = f"🧠 *Analisi a posteriori:* Mercato laterale rispetto al controllo precedente (${prezzo_precedente:,.2f}). Posizioni monitorate senza variazioni di rilievo."
+            if ultimo_prezzo <= (ultimo_lotto_prezzo - distanza_richiesta_atr):
+                if saldo_corrente >= CAPITALE_PER_LOTTO:
+                    nuovo_id = lotti_attivi + 1
+                    quantita = CAPITALE_PER_LOTTO / ultimo_prezzo
+                    portafoglio["saldo_usd"] = saldo_corrente - CAPITALE_PER_LOTTO
+                    portafoglio["lotti"].append({
+                        "id": nuovo_id,
+                        "prezzo_entrata": ultimo_prezzo,
+                        "quantita": quantita,
+                        "spesa": CAPITALE_PER_LOTTO
+                    })
+                    portafoglio["ultima_attesa"] = None
+                    
+                    quantita_totale = sum(l.get('quantita', 0) for l in portafoglio["lotti"])
+                    spesa_totale = sum(l.get('spesa', 0) for l in portafoglio["lotti"])
+                    prezzo_medio = spesa_totale / quantita_totale
+                    lotti_attivi = nuovo_id
+                    
+                    messaggio_notifica = (
+                        f"🟢 *INCREMENTO POSIZIONE: LOTTO (#{nuovo_id}/{MAX_LOTTI})* 🟢\n\n"
+                        f"• Prezzo Ingresso: ${ultimo_prezzo:,.2f}\n"
+                        f"• Motivo: Ribasso protetto dalla volatilità ATR (${distanza_richiesta_atr:,.2f} di distanza).\n"
+                        f"• Nuovo Prezzo Medio: ${prezzo_medio:,.2f}\n"
+                        f"• Saldo USD Residuo: ${portafoglio['saldo_usd']:,.2f}"
+                    )
+                    azione_eseguita = True
+                    salva_portafoglio(portafoglio)
 
-        portafoglio["ultima_attesa"] = {
-            "prezzo": ultimo_prezzo,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        salva_portafoglio(portafoglio)
-
-        motivo_attesa = f"RSI attuale ({rsi_attuale:.1f}) non è ancora sotto la soglia d'ingresso o manca il ribasso richiesto."
+    # --- REPORT DI ATTESA E MONITORAGGIO ---
+    if not azione_eseguita:
+        motivo_attesa = f"RSI attuale ({rsi_attuale:.1f}) in attesa di zone di ipervenduto o pullback ottimale."
         if lotti_attivi > 0:
-            motivo_attesa = f"Posizioni aperte ({lotti_attivi} lotti). Il prezzo non ha ancora raggiunto la soglia di ribasso dell'1.5% per il lotto successivo e il target di profitto non è attivo."
+            motivo_attesa = f"In attesa di target per vendite parziali o ribasso sufficiente (ATR: ${atr_attuale:.2f}) per il lotto successivo."
 
         dettagli_posizioni = ""
         if lotti_attivi > 0:
@@ -363,18 +352,16 @@ def esegui_bot():
             )
 
         messaggio_notifica = (
-            f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n\n"
-            f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n\n"
-            f"{analisi_a_posteriori}\n\n"
-            f"📌 *Analisi e Decisione del Bot (In Attesa):*\n"
-            f"• RSI attuale: {rsi_attuale:.1f}\n"
+            f"📈 *REPORT PROFIT MAXIMIZER (1m)* 📈\n\n"
+            f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n"
+            f"• RSI: {rsi_attuale:.1f} | ATR: ${atr_attuale:.2f}\n\n"
             f"{dettagli_posizioni}"
-            f"• Motivo dell'attesa attuale: {motivo_attesa}"
+            f"• Stato: {motivo_attesa}"
         )
 
     chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, portafoglio.get("lotti", []), prezzo_medio, stop_loss_effettivo_perc)
     invia_messaggio_telegram(messaggio_notifica, chart_path)
-    print("Report inviato con successo su Telegram.")
+    print("Report Profit Maximizer inviato con successo su Telegram.")
 
 if __name__ == "__main__":
     esegui_bot()
