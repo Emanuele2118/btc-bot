@@ -1,1 +1,25 @@
-{"usd": 907.2008980850178, "btc": 0, "Lotti": [{"quantita": 0.07049700705758465, "prezzo": 63996.78}, {"quantita": 0.0703366323700924, "prezzo": 63996.77}], "ultima_operazione": {"tipo": "ACQUISTO", "prezzo": 63996.77, "timestamp": 1784980208}, "prezzo_max_raggiunto": 0.0, "ultimo_invio_timestamp": 1784980208, "ultima_transazione_timestamp": 1784980208, "prezzo_acquisto": 0.0}
+{
+    "usd": 907.2008980850178,
+    "btc": 0,
+    "Lotti": [
+        {
+            "quantita": 0.07049700705758465,
+            "prezzo": 63996.78
+        },
+        {
+            "quantita": 0.0703366323700924,
+            "prezzo": 63996.77
+        }
+    ],
+    "ultima_operazione": {
+        "tipo": "ACQUISTO",
+        "prezzo": 63996.77,
+        "timestamp": 1784980208
+    },
+    "prezzo_max_raggiunto": 0.0,
+    "ultimo_invio_timestamp": 1784980208,
+    "ultima_transazione_timestamp": 1784980208,
+    "prezzo_acquisto": 0.0,
+    "saldo_usd": 10000.0,
+    "lotti": []
+}
