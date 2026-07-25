@@ -26,7 +26,6 @@ def run_bot():
     print("--- Inizio esecuzione Bot Strategia RSI + Target Rapido (1m) ---")
     
     try:
-        # Candele a 1 minuto da Coinbase
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url_coinbase, headers=headers, timeout=10)
@@ -43,7 +42,6 @@ def run_bot():
 
         ultimo_prezzo = float(df['Close'].iloc[-1])
         
-        # Calcolo EMA e RSI a 14 periodi
         df['ema'] = df['Close'].ewm(span=20, adjust=False).mean()
         
         delta = df['Close'].diff()
@@ -71,16 +69,14 @@ def run_bot():
                     
         messaggio = None
         
-        # Calcoliamo la performance corrente se abbiamo una posizione aperta
         profitto_perc = 0.0
         if dati["btc"] > 0 and dati["prezzo_acquisto"] > 0:
             profitto_perc = ((ultimo_prezzo - dati["prezzo_acquisto"]) / dati["prezzo_acquisto"]) * 100
 
-        # STRATEGIA COLLAUDATA:
-        # 1. ACQUISTO: Se non abbiamo BTC, l'RSI va in ipervenduto (< 38) oppure il prezzo rimbalza sopra l'EMA con RSI sano (< 60)
+        # 1. ACQUISTO
         if dati["btc"] == 0 and dati["usd"] > 100:
-            if rsi_attuale < 38: # Condizione di ipervenduto classico
-                spesa = dati["usd"] * 0.40 # Investe il 40% del capitale disponibile
+            if rsi_attuale < 38:
+                spesa = dati["usd"] * 0.40
                 quantita = spesa / ultimo_prezzo
                 
                 dati["usd"] -= spesa
@@ -92,13 +88,14 @@ def run_bot():
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"• **Prezzo:** ${ultimo_prezzo:,.2f}\n"
                     f"• **Quantità:** {quantita:.5f} BTC\n"
+                    f"• **Spesa totale:** ${spesa:,.2f}\n"
                     f"• **RSI:** {rsi_attuale:.1f} (Sotto 38)\n\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"💰 **Saldo USD:** ${dati['usd']:,.2f}\n"
+                    f"💰 **Saldo USD residuo:** ${dati['usd']:,.2f}\n"
                     f"🪙 **Saldo BTC:** {dati['btc']:.5f}"
                 )
 
-        # 2. VENDITA: Se abbiamo BTC, vendiamo se facciamo un profitto del +0.6%, o se l'RSI va in ipercomprato (> 65), o se scatta uno stop loss di protezione (-1.5%)
+        # 2. VENDITA
         elif dati["btc"] > 0:
             condizione_vendita = False
             motivo_vendita = ""
@@ -134,7 +131,7 @@ def run_bot():
                     f"🪙 **Saldo BTC:** {dati['btc']}"
                 )
 
-        # Se non ci sono operazioni, invia il report di controllo standard
+        # Report di controllo standard
         if not messaggio:
             if dati["btc"] > 0:
                 valore_attuale_btc = dati["btc"] * ultimo_prezzo
