@@ -20,10 +20,17 @@
     "ultimo_invio_timestamp": 1784980208,
     "ultima_transazione_timestamp": 1784980208,
     "prezzo_acquisto": 0.0,
-    "saldo_usd": 10018.783492004812,
-    "lotti": [],
+    "saldo_usd": 7015.783492004812,
+    "lotti": [
+        {
+            "id": 1,
+            "prezzo_entrata": 64341.76,
+            "quantita": 0.046626017068852325,
+            "spesa": 3003.0
+        }
+    ],
     "ultima_attesa": null,
-    "ultima_operazione_time": 1785015634.279622,
+    "ultima_operazione_time": 1785019236.141167,
     "ultimo_report_time": 1785018737.737672,
     "valore_iniziale_giornata": 10000.0,
     "data_ultima_registrazione": "2026-07-25",
