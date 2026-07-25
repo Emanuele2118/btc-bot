@@ -39,7 +39,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
                      color='#00ffcc', fontsize=9, fontweight='bold',
                      bbox=dict(boxstyle='round,pad=0.25', fc='#111111', ec='#00ffcc', alpha=0.85))
 
-        ax1.set_title('BTC-USD | Analisi Tecnica & Medie Mobili', color='white', fontsize=13, fontweight='bold', pad=12)
+        ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='white', fontsize=13, fontweight='bold', pad=12)
         ax1.tick_params(colors='white', labelsize=9)
         ax1.grid(True, color='#333333', linestyle=':', alpha=0.7)
         
@@ -54,8 +54,10 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo):
         ax2.axis('off')
         
         info_testo = (
-            f" 📊  PANNELLO DI CONTROLLO RAPIDO\n"
-            f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI Attuale: {rsi_attuale:.1f} (Target acquisto < 35)\n"
+            f" 📊  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR
+"
+            f" • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}
+"
             f" • Stato Operativo: {stato_testo}"
         )
         
@@ -121,16 +123,19 @@ def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, pro
         print(f"Errore invio a Google Sheets: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot ---")
+    print("--- Inizio esecuzione Bot con Profit Lockdown & Risk Management ---")
     
     file_path = 'portfolio.json'
+    file_backup = 'portfolio_backup.json'
+    
     dati = {
         "usd": 10000.0, 
         "btc": 0.0, 
         "Lotti": [],
         "ultima_operazione": None,
         "prezzo_max_raggiunto": 0.0,
-        "ultimo_invio_timestamp": 0
+        "ultimo_invio_timestamp": 0,
+        "ultima_transazione_timestamp": 0
     }
     
     if os.path.exists(file_path):
@@ -143,7 +148,7 @@ def run_bot():
 
     timestamp_attuale = int(datetime.now(timezone.utc).timestamp())
     
-    # Antispam: blocca esecuzioni duplicate a meno di 50 secondi di distanza
+    # Antispam report (almeno 50 secondi tra i messaggi di monitoraggio)
     if timestamp_attuale - dati.get("ultimo_invio_timestamp", 0) < 50:
         print("Esecuzione bloccata: è passato troppo poco tempo dall'ultimo messaggio.")
         return
@@ -157,7 +162,7 @@ def run_bot():
             raw_data = response.json()
             raw_data.reverse()
             df = pd.DataFrame(raw_data, columns=['Time', 'Low', 'High', 'Open', 'Close', 'Volume'])
-            df = df[['Open', 'High', 'Low', 'Close']].astype(float)
+            df = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
         else:
             print(f"Errore Coinbase: {response.status_code}")
             return
@@ -165,8 +170,10 @@ def run_bot():
         ultimo_prezzo = float(df['Close'].iloc[-1])
         stringa_data = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         
+        # Indicatori Tecnici
         df['ema_veloce'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['ema_lenta'] = df['Close'].ewm(span=50, adjust=False).mean()
+        df['ema_macro'] = df['Close'].ewm(span=200, adjust=False).mean() if len(df) >= 200 else df['ema_lenta']
         
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -174,9 +181,17 @@ def run_bot():
         rs = gain / loss
         df['rsi'] = 100 - (100 / (1 + rs))
         
+        high_low = df['High'] - df['Low']
+        high_close = np.abs(df['High'] - df['Close'].shift())
+        low_close = np.abs(df['Low'] - df['Close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        df['atr'] = ranges.max(axis=1).rolling(14).mean()
+        
         ema_v = float(df['ema_veloce'].iloc[-1])
         ema_l = float(df['ema_lenta'].iloc[-1])
+        ema_m = float(df['ema_macro'].iloc[-1])
         rsi_attuale = float(df['rsi'].iloc[-1])
+        atr_attuale = float(df['atr'].iloc[-1]) if not pd.isna(df['atr'].iloc[-1]) else (ultimo_prezzo * 0.005)
         
         messaggio = None
         tot_btc = sum(lotto["quantita"] for lotto in dati["Lotti"])
@@ -189,21 +204,43 @@ def run_bot():
         if tot_btc > 0 and prezzo_medio > 0:
             profitto_perc = ((ultimo_prezzo - prezzo_medio) / prezzo_medio) * 100
 
-        trend_favorevole = ema_v >= (ema_l * 0.998)
-        
-        # Trailing Take Profit
-        target_iniziale_raggiunto = profitto_perc >= 0.8
+        # Condizioni di mercato adattive e gestione rischio basata su ATR
+        trend_favorevole = (ema_v >= (ema_l * 0.998)) and (ultimo_prezzo >= ema_m * 0.99)
+        cooldown_superato = (timestamp_attuale - dati.get("ultima_transazione_timestamp", 0)) >= 180
+
+        # Volatilità normalizzata per dimensionare il rischio
+        volatilita_pct = (atr_attuale / ultimo_prezzo) * 100
+
+        # Trailing Take Profit Dinamico
+        target_iniziale_raggiunto = profitto_perc >= 0.7
         if tot_btc > 0 and target_iniziale_raggiunto:
             if ultimo_prezzo > dati["prezzo_max_raggiunto"]:
                 dati["prezzo_max_raggiunto"] = ultimo_prezzo
         else:
             dati["prezzo_max_raggiunto"] = 0.0
             
+        soglia_ritracciamento_perc = max(0.25, min(0.6, volatilita_pct * 1.2))
+        
         trailing_scattato = False
         if tot_btc > 0 and dati["prezzo_max_raggiunto"] > 0:
             ritracciamento = ((dati["prezzo_max_raggiunto"] - ultimo_prezzo) / dati["prezzo_max_raggiunto"]) * 100
-            if profitto_perc >= 0.8 and ritracciamento >= 0.3:
+            if profitto_perc >= 0.7 and ritracciamento >= soglia_ritracciamento_perc:
                 trailing_scattato = True
+
+        minimo_recente = float(df['Low'].tail(10).min())
+        stop_loss_strutturale_perc = min(-2.0, ((minimo_recente - prezzo_medio) / prezzo_medio) * 100) if prezzo_medio > 0 else -2.0
+
+        # --- NUOVA LOGICA: PROFIT LOCKDOWN DINAMICO ---
+        # Se il profitto tocca soglie elevate, innalziamo la soglia di Stop Loss per bloccare i profitti guadagnati
+        stop_loss_effettivo_perc = stop_loss_strutturale_perc
+        motivo_stop_loss = "Supporti strutturali"
+        
+        if profitto_perc >= 3.0:
+            stop_loss_effettivo_perc = 1.0  # Blinda almeno +1.0% di guadagno netto garantito
+            motivo_stop_loss = "Profit Lockdown livello 2 (Garantito +1%)"
+        elif profitto_perc >= 1.5:
+            stop_loss_effettivo_perc = 0.0  # Breakeven (zero rischi di perdita)
+            motivo_stop_loss = "Profit Lockdown livello 1 (Pareggio / Breakeven)"
 
         # Retrospettiva
         nota_retrospettiva = ""
@@ -226,35 +263,52 @@ def run_bot():
                         nota_retrospettiva = f"\n🧠 *Analisi a posteriori:* Dopo l'acquisto il mercato è sceso temporaneamente del {perc_diff:.2f}%."
                 dati["ultima_operazione"] = None
 
-        # 1. ACQUISTO (Aggiornato con spiegazione chiara del motivo)
+        # 1. ACQUISTO CON POSITION SIZING DINAMICO (Adattato alla volatilità ATR)
         capitale_totale = dati["usd"] + (tot_btc * ultimo_prezzo)
-        if rsi_attuale < 35 and dati["usd"] > 100 and len(dati["Lotti"]) < 3 and trend_favorevole:
-            spesa_lorda = capitale_totale * 0.30
+        if rsi_attuale < 38 and dati["usd"] > 100 and trend_favorevole and cooldown_superato:
+            if volatilita_pct > 0.4:
+                peso_base = 0.20
+                motivo_vol = f"Volatilità elevata (ATR {volatilita_pct:.2f}%), esposizione prudenziale"
+            else:
+                peso_base = 0.35
+                motivo_vol = f"Volatilità contenuta (ATR {volatilita_pct:.2f}%), esposizione ottimizzata"
+
+            if rsi_attuale < 26:
+                peso_investimento = peso_base * 1.35
+                motivo_rsi = f"Ipervenduto profondo ({rsi_attuale:.1f} < 26)"
+            else:
+                peso_investimento = peso_base
+                motivo_rsi = f"Ipervenduto standard ({rsi_attuale:.1f} < 38)"
+
+            spesa_lorda = capitale_totale * min(peso_investimento, 0.455)
             if spesa_lorda > dati["usd"]:
                 spesa_lorda = dati["usd"]
+                
             comm_acq = spesa_lorda * FEE_RATE
             qta = (spesa_lorda - comm_acq) / ultimo_prezzo
             
             dati["usd"] -= spesa_lorda
             dati["Lotti"].append({"quantita": qta, "prezzo": ultimo_prezzo})
             dati["ultima_operazione"] = {"tipo": "ACQUISTO", "prezzo": ultimo_prezzo, "timestamp": timestamp_attuale}
+            dati["ultima_transazione_timestamp"] = timestamp_attuale
             
-            motivo_acquisto = f"RSI in ipervenduto ({rsi_attuale:.1f} < 35) con trend favorevole (EMA 9/50)"
-            registra_su_google_sheets(stringa_data, "ACQUISTO", ultimo_prezzo, qta, comm_acq, 0.0, f"Lotto #{len(dati['Lotti'])}")
+            numero_lotto_attuale = len(dati["Lotti"])
+            motivo_acquisto = f"{motivo_rsi} | {motivo_vol}. Aggiunto lotto #{numero_lotto_attuale} bilanciando il rischio di portafoglio."
+            registra_su_google_sheets(stringa_data, "ACQUISTO", ultimo_prezzo, qta, comm_acq, 0.0, f"Lotto #{numero_lotto_attuale}")
             
             messaggio = (
-                f"🟢 *ACQUISTO LOTTO #{len(dati['Lotti'])} ESEGUITO* 🟢\n"
+                f"🟢 *ACQUISTO LOTTO (#{numero_lotto_attuale}) CON PROFIT LOCKDOWN* 🟢\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• *Prezzo entrata:* ${ultimo_prezzo:,.2f}\n"
                 f"• *Quantità acquistata:* {qta:.5f} BTC\n"
-                f"• *Motivo:* {motivo_acquisto}\n"
+                f"• *Perché questa scelta:* {motivo_acquisto}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 *Totale lotti attivi:* {len(dati['Lotti'])}/3\n"
+                f"📊 *Lotti attivi totali:* {numero_lotto_attuale}\n"
                 f"💰 *Saldo USD residuo:* ${dati['usd']:,.2f}"
             )
 
-        # 2. VENDITA PARZIALE
-        elif tot_btc > 0 and (trailing_scattato or rsi_attuale > 65):
+        # 2. VENDITA PARZIALE INTELLIGENTE
+        elif tot_btc > 0 and (trailing_scattato or rsi_attuale > 68) and cooldown_superato:
             lotto = dati["Lotti"].pop(0)
             qta_v = lotto["quantita"]
             ricavo_lordo = qta_v * ultimo_prezzo
@@ -266,67 +320,89 @@ def run_bot():
             dati["usd"] += ricavo_netto
             dati["prezzo_max_raggiunto"] = 0.0
             dati["ultima_operazione"] = {"tipo": "VENDITA", "prezzo": ultimo_prezzo, "timestamp": timestamp_attuale}
+            dati["ultima_transazione_timestamp"] = timestamp_attuale
             
-            motivo = "Trailing Take Profit" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f})"
+            motivo = f"Trailing Take Profit ATR (ritracciamento del {soglia_ritracciamento_perc:.2f}%)" if trailing_scattato else f"RSI ipercomprato ({rsi_attuale:.1f} > 68)"
+            motivo_vendita = f"{motivo}. Blocco parziale dei profitti sul lotto più vecchio per mitigare il rischio di inversione lasciando correre le posizioni più recenti."
+            
             registra_su_google_sheets(stringa_data, "VENDITA", ultimo_prezzo, qta_v, comm_vend, profitto_usd, motivo)
-            
             rimanenti_btc = sum(l["quantita"] for l in dati["Lotti"])
             
             messaggio = (
-                f"🔵 *VENDITA PARZIALE ESEGUITA* 🔵\n"
+                f"🔵 *VENDITA PARZIALE INTELLIGENTE* 🔵\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"• *Prezzo uscita:* ${ultimo_prezzo:,.2f}\n"
                 f"• *Quantità venduta:* {qta_v:.5f} BTC\n"
                 f"• *Profitto netto:* {segno_p}${profitto_usd:,.2f}\n"
-                f"• *Motivo:* {motivo}\n"
+                f"• *Perché questa scelta:* {motivo_vendita}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 *Rimanenti sul conto:* {rimanenti_btc:.5f} BTC ({len(dati['Lotti'])} lotti attivi)\n"
+                f"📊 *Rimasti sul conto:* {rimanenti_btc:.5f} BTC ({len(dati['Lotti'])} lotti attivi)\n"
                 f"💰 *Saldo USD:* ${dati['usd']:,.2f}"
             )
 
-        # 3. STOP LOSS
-        elif tot_btc > 0 and profitto_perc <= -1.8:
+        # 3. STOP LOSS / PROFIT LOCKDOWN TRIGGER
+        elif tot_btc > 0 and profitto_perc <= stop_loss_effettivo_perc:
             ricavo_tot = sum(l["quantita"] * ultimo_prezzo for l in dati["Lotti"])
             comm_tot = ricavo_tot * FEE_RATE
-            perdita_usd = (ricavo_tot - comm_tot) - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
+            risultato_usd = (ricavo_tot - comm_tot) - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
             
             qta_tot = tot_btc
             dati["usd"] += (ricavo_tot - comm_tot)
             dati["Lotti"] = []
             dati["prezzo_max_raggiunto"] = 0.0
             dati["ultima_operazione"] = {"tipo": "VENDITA", "prezzo": ultimo_prezzo, "timestamp": timestamp_attuale}
+            dati["ultima_transazione_timestamp"] = timestamp_attuale
             
-            registra_su_google_sheets(stringa_data, "STOP_LOSS", ultimo_prezzo, qta_tot, comm_tot, perdita_usd, "Salvaguardia")
-            messaggio = f"🔴 *STOP LOSS ESEGUITO* 🔴\n• Perdita: -${abs(perdita_usd):,.2f}\n• Saldo USD: ${dati['usd']:,.2f}"
+            tipo_uscita_txt = "STOP LOSS DI PROTEZIONE" if risultato_usd < 0 else "PROFIT LOCKDOWN (Chiusura in guadagno protetto)"
+            icona_uscita = "🔴" if risultato_usd < 0 else "🟢"
+            segno_res = "+" if risultato_usd >= 0 else ""
+            
+            registra_su_google_sheets(stringa_data, "STOP_LOSS_LOCKDOWN", ultimo_prezzo, qta_tot, comm_tot, risultato_usd, motivo_stop_loss)
+            messaggio = (
+                f"{icona_uscita} *{tipo_uscita_txt}* {icona_uscita}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"• *Criterio attivato:* {motivo_stop_loss} (Performance attuale: {profitto_perc:.2f}% vs soglia limite {stop_loss_effettivo_perc:.2f}%).\n"
+                f"• *Risultato netto:* {segno_res}${risultato_usd:,.2f}\n"
+                f"• *Saldo USD:* ${dati['usd']:,.2f}"
+            )
 
         # Report Standard
         if not messaggio:
             tot_btc_agg = sum(l["quantita"] for l in dati["Lotti"])
             if tot_btc_agg > 0:
-                valore = tot_btc_agg * ultimo_prezzo
-                p_temp = valore - sum(l["quantita"] * l["prezzo"] for l in dati["Lotti"])
-                segno = "+" if p_temp >= 0 else ""
                 stato = (
-                    f"📈 *Posizione ancora attiva ({len(dati['Lotti'])} lotti)*\n"
-                    f"• Quantità totale in corso: {tot_btc_agg:.5f} BTC\n"
+                    f"📈 *Posizioni attive ({len(dati['Lotti'])} lotti in corso)*\n"
+                    f"• Quantità totale BTC: {tot_btc_agg:.5f}\n"
                     f"• Prezzo medio di carico: ${prezzo_medio:,.2f}\n"
-                    f"• Performance netta: {segno}${p_temp:,.2f} ({segno}{profitto_perc:.2f}%)"
+                    f"• Performance netta: {profitto_perc:+.2f}%\n"
+                    f"• *Protezione attiva:* Stop Loss dinamico a {stop_loss_effettivo_perc:+.2f}% ({motivo_stop_loss})."
                 )
             else:
                 if trend_favorevole:
-                    stato = f"🟢 *In attesa di acquisto (Trend FAVOREVOLE)*\n• RSI: {rsi_attuale:.1f} (Target < 35)"
+                    stato = (
+                        f"🟢 *In attesa attiva (Trend FAVOREVOLE)*\n"
+                        f"• RSI attuale: {rsi_attuale:.1f} (soglia d'ingresso < 38)\n"
+                        f"• *Perché stiamo attendendo:* La struttura macro è rialzista, ma attendiamo uno scarico più deciso dell'indicatore RSI o lo scadere del cooldown per calibrare un nuovo lotto a basso rischio."
+                    )
                 else:
-                    stato = f"🔴 *In attesa protetta (Trend RIBASSISTA)*"
+                    stato = (
+                        f"🔴 *In attesa protetta (Trend RIBASSISTA)*\n"
+                        f"• RSI attuale: {rsi_attuale:.1f}\n"
+                        f"• *Perché stiamo attendendo:* Il mercato mostra debolezza sotto la media mobile principale. Il bot sceglie di rimanere in USD per azzerare l'esposizione al rischio ribassista."
+                    )
 
-            messaggio = f"🛡️ *REPORT DI MERCATO* 🛡️\n━━━━━━━━━━━━━━━━━━━\n• *Prezzo BTC:* ${ultimo_prezzo:,.2f}\n{nota_retrospettiva}\n\n📌 *Analisi:*\n{stato}"
+            messaggio = f"🛡️ *REPORT DI MERCATO & PROFIT LOCKDOWN* 🛡️\n━━━━━━━━━━━━━━━━━━━\n• *Prezzo BTC:* ${ultimo_prezzo:,.2f}\n{nota_retrospettiva}\n\n📌 *Analisi e Decisione del Bot:*\n{stato}"
 
         dati["ultimo_invio_timestamp"] = timestamp_attuale
 
+        # Salvataggio con Backup di sicurezza
         with open(file_path, 'w') as f:
+            json.dump(dati, f)
+        with open(file_backup, 'w') as f:
             json.dump(dati, f)
             
         if tot_btc > 0:
-            stato_dashboard = f"Posizione attiva ({len(dati['Lotti'])} lotti) - P&L: {profitto_perc:+.2f}%"
+            stato_dashboard = f"Posizioni attive (P&L: {profitto_perc:+.2f}% | SL: {stop_loss_effettivo_perc:+.2f}%)"
         else:
             stato_dashboard = "In attesa di acquisto" if trend_favorevole else "In attesa protetta"
 
