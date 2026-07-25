@@ -101,10 +101,10 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO CON TRACCIAMENTO STRATEGIA ====================
+# ==================== GENERAZIONE GRAFICO OTTIMIZZATA & PULITA ====================
 def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_correnti, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
-        fig, ax1 = plt.subplots(figsize=(10, 7), facecolor='white')
+        fig, ax1 = plt.subplots(figsize=(11, 7), facecolor='white')
         ax1.set_facecolor('white')
         
         dati_plot = df.tail(90).copy().reset_index(drop=True)
@@ -127,7 +127,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
         ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#fb8c00', linewidth=1.2, linestyle='--')
         ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3949ab', linewidth=1.2, linestyle='--')
         
-        # Tracciamento dei livelli attivi della strategia (Prezzo Medio e Stop/Lockdown)
+        # Livelli strategici attivi
         if prezzo_medio > 0:
             ax1.axhline(y=prezzo_medio, color='#0288d1', linestyle='-.', linewidth=1.5, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
             prezzo_sl = prezzo_medio * (1 + (stop_loss_perc / 100.0))
@@ -135,17 +135,17 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
             etichetta_sl = f'Stop/Lockdown ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}'
             ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=1.8, alpha=0.9, label=etichetta_sl)
 
-        # Disegna i punti di ingresso dei lotti attivi sul grafico se ricadono nella finestra temporale visualizzata
+        # Lotti correnti
         if lotti_correnti:
             for lotto in lotti_correnti:
                 p_entrata = lotto.get("prezzo_entrata")
                 id_lotto = lotto.get("id")
-                # Cerca la candela più vicina al prezzo d'ingresso o mappa visivamente
-                ax1.axhline(y=p_entrata, color='#ffb300', linestyle=':', alpha=0.5, linewidth=1)
-                ax1.text(x_nums[0], p_entrata, f' L{id_lotto} (${p_entrata:,.2f})', color='#b26a00', fontsize=8, fontweight='bold', va='center')
+                ax1.axhline(y=p_entrata, color='#ffb300', linestyle=':', alpha=0.6, linewidth=1)
+                ax1.text(x_nums[2], p_entrata, f' L{id_lotto} (${p_entrata:,.2f})', color='#b26a00', fontsize=8, fontweight='bold', va='bottom')
 
+        # Prezzo attuale evidenziato a destra
         ultimo_x = x_nums[-1]
-        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00897b', s=50, zorder=5)
+        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00897b', s=60, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
                      xy=(ultimo_x, prezzo_attuale), 
                      xytext=(-70, 15), textcoords='offset points',
@@ -156,18 +156,21 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_cor
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.5)
         
+        # Gestione pulita delle date sull'asse X (evita sovrapposizioni)
         ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=15))
+        ax1.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
         fig.autofmt_xdate(rotation=0, ha='center')
         
         for spine in ax1.spines.values():
             spine.set_color('#cccccc')
             
-        ax1.legend(loc='upper left', facecolor='#fafafa', edgecolor='none', labelcolor='black', fontsize=8)
+        # Legenda in alto a sinistra
+        ax1.legend(loc='upper left', facecolor='#fafafa', edgecolor='#cccccc', labelcolor='black', fontsize=8, framealpha=0.9)
 
-        props = dict(boxstyle='square,pad=0.8', facecolor='#eeeeee', edgecolor='#cccccc', alpha=0.9)
-        info_testo = f"  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato Operativo: {stato_testo}"
-        ax1.text(0.02, -0.17, info_testo, transform=ax1.transAxes, fontsize=9, family='monospace', verticalalignment='top', bbox=props)
+        # Pannello di controllo pulito dentro il grafico in basso a sinistra
+        props = dict(boxstyle='round,pad=0.6', facecolor='#f8f9fa', edgecolor='#ced4da', alpha=0.95)
+        info_testo = f"PANNELLO CONTROLLO:\n• Prezzo: ${prezzo_attuale:,.2f} | RSI: {rsi_attuale:.1f}\n• {stato_testo}"
+        ax1.text(0.02, 0.03, info_testo, transform=ax1.transAxes, fontsize=8.5, family='sans-serif', verticalalignment='bottom', bbox=props, zorder=6)
 
         plt.tight_layout()
         chart_path = 'temp_chart.png'
