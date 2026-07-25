@@ -101,16 +101,17 @@ def calcola_atr(df, periodo=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=periodo).mean()
 
-# ==================== GENERAZIONE GRAFICO PULITO E PRECISO ====================
-def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_medio=0.0, stop_loss_perc=0.0):
+# ==================== GENERAZIONE GRAFICO CON TRACCIAMENTO STRATEGIA ====================
+def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, lotti_correnti, prezzo_medio=0.0, stop_loss_perc=0.0):
     try:
         fig, ax1 = plt.subplots(figsize=(10, 7), facecolor='white')
         ax1.set_facecolor('white')
         
         dati_plot = df.tail(90).copy().reset_index(drop=True)
-        x = range(len(dati_plot))
+        x_dates = dati_plot['Datetime']
+        x_nums = mdates.date2num(x_dates)
         
-        for i in x:
+        for i in range(len(dati_plot)):
             o = dati_plot['Open'].iloc[i]
             c = dati_plot['Close'].iloc[i]
             h = dati_plot['High'].iloc[i]
@@ -118,14 +119,15 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
             
             colore = '#00897b' if c >= o else '#8e24aa'
             
-            ax1.plot([i, i], [l, h], color=colore, linewidth=1, zorder=1)
+            ax1.plot([x_nums[i], x_nums[i]], [l, h], color=colore, linewidth=1, zorder=1)
             bottom = min(o, c)
             height = abs(c - o) if abs(c - o) > 0 else 0.01
-            ax1.bar(i, height, bottom=bottom, color=colore, width=0.6, zorder=2)
+            ax1.bar(x_nums[i], height, bottom=bottom, color=colore, width=0.0004, zorder=2)
 
-        ax1.plot(x, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#fb8c00', linewidth=1.2, linestyle='--')
-        ax1.plot(x, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3949ab', linewidth=1.2, linestyle='--')
+        ax1.plot(x_nums, dati_plot['ema_veloce'], label='EMA 9 (Veloce)', color='#fb8c00', linewidth=1.2, linestyle='--')
+        ax1.plot(x_nums, dati_plot['ema_lenta'], label='EMA 50 (Lenta)', color='#3949ab', linewidth=1.2, linestyle='--')
         
+        # Tracciamento dei livelli attivi della strategia (Prezzo Medio e Stop/Lockdown)
         if prezzo_medio > 0:
             ax1.axhline(y=prezzo_medio, color='#0288d1', linestyle='-.', linewidth=1.5, alpha=0.9, label=f'Prezzo Medio: ${prezzo_medio:,.2f}')
             prezzo_sl = prezzo_medio * (1 + (stop_loss_perc / 100.0))
@@ -133,24 +135,30 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
             etichetta_sl = f'Stop/Lockdown ({stop_loss_perc:+.1f}%): ${prezzo_sl:,.2f}'
             ax1.axhline(y=prezzo_sl, color=colore_sl, linestyle=':', linewidth=1.8, alpha=0.9, label=etichetta_sl)
 
-        ultimo_idx = len(x) - 1
-        ax1.scatter([ultimo_idx], [prezzo_attuale], color='#00897b', s=50, zorder=5)
+        # Disegna i punti di ingresso dei lotti attivi sul grafico se ricadono nella finestra temporale visualizzata
+        if lotti_correnti:
+            for lotto in lotti_correnti:
+                p_entrata = lotto.get("prezzo_entrata")
+                id_lotto = lotto.get("id")
+                # Cerca la candela più vicina al prezzo d'ingresso o mappa visivamente
+                ax1.axhline(y=p_entrata, color='#ffb300', linestyle=':', alpha=0.5, linewidth=1)
+                ax1.text(x_nums[0], p_entrata, f' L{id_lotto} (${p_entrata:,.2f})', color='#b26a00', fontsize=8, fontweight='bold', va='center')
+
+        ultimo_x = x_nums[-1]
+        ax1.scatter([ultimo_x], [prezzo_attuale], color='#00897b', s=50, zorder=5)
         ax1.annotate(f"${prezzo_attuale:,.2f}", 
-                     xy=(ultimo_idx, prezzo_attuale), 
+                     xy=(ultimo_x, prezzo_attuale), 
                      xytext=(-70, 15), textcoords='offset points',
                      color='black', fontsize=9, fontweight='bold',
                      bbox=dict(boxstyle='round,pad=0.3', fc='#f5f5f5', ec='#00897b', alpha=0.9))
 
-        ax1.set_title('BTC-USD | Profit Lockdown & Risk-Managed Bot', color='black', fontsize=13, fontweight='bold', pad=15)
+        ax1.set_title('BTC-USD | Profit Lockdown & Strategy Map (1m)', color='black', fontsize=13, fontweight='bold', pad=15)
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#e0e0e0', linestyle='--', alpha=0.5)
         
-        # Gestione pulita degli orari sull'asse X
-        if 'Datetime' in dati_plot.columns:
-            orari = [dt.strftime('%H:%M') for dt in dati_plot['Datetime']]
-            step = max(1, len(x) // 7)  # Distribuisce circa 7 etichette orarie leggibili
-            ax1.set_xticks(list(x)[::step])
-            ax1.set_xticklabels([orari[i] for i in list(x)[::step]], fontsize=8)
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=15))
+        fig.autofmt_xdate(rotation=0, ha='center')
         
         for spine in ax1.spines.values():
             spine.set_color('#cccccc')
@@ -159,7 +167,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, prezzo_me
 
         props = dict(boxstyle='square,pad=0.8', facecolor='#eeeeee', edgecolor='#cccccc', alpha=0.9)
         info_testo = f"  PANNELLO DI CONTROLLO PROFIT LOCKDOWN & ATR\n • Prezzo Corrente: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}\n • Stato Operativo: {stato_testo}"
-        ax1.text(0.02, -0.15, info_testo, transform=ax1.transAxes, fontsize=9, family='monospace', verticalalignment='top', bbox=props)
+        ax1.text(0.02, -0.17, info_testo, transform=ax1.transAxes, fontsize=9, family='monospace', verticalalignment='top', bbox=props)
 
         plt.tight_layout()
         chart_path = 'temp_chart.png'
@@ -344,7 +352,6 @@ def esegui_bot():
         if lotti_attivi > 0:
             motivo_attesa = f"Posizioni aperte ({lotti_attivi} lotti). Il prezzo non ha ancora raggiunto la soglia di ribasso dell'1.5% per il lotto successivo e il target di profitto non è attivo."
 
-        # Se non ci stampiamo le righe dei lotti a 0, costruiamo il blocco in modo dinamico
         dettagli_posizioni = ""
         if lotti_attivi > 0:
             dettagli_posizioni = (
@@ -363,7 +370,7 @@ def esegui_bot():
             f"• Motivo dell'attesa attuale: {motivo_attesa}"
         )
 
-    chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, prezzo_medio, stop_loss_effettivo_perc)
+    chart_path = genera_grafico_chart(df, rsi_attuale, ultimo_prezzo, stato_dashboard, portafoglio.get("lotti", []), prezzo_medio, stop_loss_effettivo_perc)
     invia_messaggio_telegram(messaggio_notifica, chart_path)
     print("Report inviato con successo su Telegram.")
 
