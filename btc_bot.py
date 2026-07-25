@@ -3,6 +3,9 @@ import json
 import requests
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg') # Necessario per girare senza interfaccia grafica sui server
+import matplotlib.pyplot as plt
 from datetime import datetime, timezone
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -11,44 +14,74 @@ GOOGLE_SHEET_URL = os.environ.get('GOOGLE_SHEET_URL')
 
 FEE_RATE = 0.005  # 0.5% di commissione per transazione
 
-def manda_messaggio_telegram(testo):
+def genera_grafico_chart(df):
+    """Genera un'immagine pulita del grafico dei prezzi e delle medie mobili e la salva localmente."""
+    try:
+        plt.figure(figsize=(10, 5), facecolor='#1e1e1e')
+        ax = plt.axes()
+        ax.set_facecolor('#1e1e1e')
+        
+        # Prendi gli ultimi 100 periodi per un grafico leggibile
+        dati_plot = df.tail(100).copy()
+        x = range(len(dati_plot))
+        
+        ax.plot(x, dati_plot['Close'], label='Prezzo BTC', color='#00ffcc', linewidth=1.5)
+        ax.plot(x, dati_plot['ema_veloce'], label='EMA 9', color='#ff00ff', linewidth=1, linestyle='--')
+        ax.plot(x, dati_plot['ema_lenta'], label='EMA 50', color='#ffcc00', linewidth=1, linestyle='--')
+        
+        ax.set_title('BTC-USD | Trend & Medie Mobili', color='white', fontsize=12, fontweight='bold', pad=10)
+        ax.tick_params(colors='white', labelsize=9)
+        ax.grid(True, color='#333333', linestyle=':', alpha=0.7)
+        
+        for spine in ax.spines.values():
+            spine.set_color('#444444')
+            
+        ax.legend(loc='upper left', facecolor='#2e2e2e', edgecolor='none', labelcolor='white', fontsize=9)
+        
+        plt.tight_layout()
+        chart_path = 'temp_chart.png'
+        plt.savefig(chart_path, dpi=150, facecolor='#1e1e1e', edgecolor='none')
+        plt.close()
+        return chart_path
+    except Exception as e:
+        print(f"Errore nella generazione del grafico locale: {e}")
+        return None
+
+def manda_messaggio_telegram(testo, chart_path=None):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Credenziali Telegram non configurate.")
         return
     
-    url_telegram = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    
-    # Invia il grafico reale come foto insieme al testo completo
-    payload = {
+    # Se abbiamo un grafico generato, lo inviamo come foto vera
+    if chart_path and os.path.exists(chart_path):
+        url_telegram = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        try:
+            with open(chart_path, 'rb') as photo_file:
+                files = {'photo': photo_file}
+                data = {
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "caption": testo,
+                    "parse_mode": "Markdown"
+                }
+                response = requests.post(url_telegram, data=data, files=files, timeout=30)
+                if response.status_code == 200:
+                    return
+                else:
+                    print(f"Invio foto fallito (Codice {response.status_code}), ripiego su testo.")
+        except Exception as e:
+            print(f"Errore invio foto Telegram: {e}")
+            
+    # Fallback se la foto non va a buon fine
+    url_fallback = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload_fallback = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "photo": "https://s3.tradingview.com/snapshots/c/Ca4T8E7X.png",
-        "caption": testo,
+        "text": testo,
         "parse_mode": "Markdown"
     }
-
     try:
-        response = requests.post(url_telegram, json=payload, timeout=20)
-        
-        # Se l'invio della foto dovesse fallire, facciamo fallback sul messaggio di testo normale
-        if response.status_code != 200:
-            print(f"Invio foto non riuscito (Codice: {response.status_code}). Invio come testo.")
-            url_fallback = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            payload_fallback = {
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": testo,
-                "parse_mode": "Markdown"
-            }
-            requests.post(url_fallback, json=payload_fallback)
-            
+        requests.post(url_fallback, json=payload_fallback, timeout=15)
     except Exception as e:
-        print(f"Errore critico invio Telegram: {e}")
-        url_fallback = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload_fallback = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": testo,
-            "parse_mode": "Markdown"
-        }
-        requests.post(url_fallback, json=payload_fallback)
+        print(f"Errore invio messaggio di testo Telegram: {e}")
 
 def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, profitto_usd, motivo):
     if not GOOGLE_SHEET_URL:
@@ -69,7 +102,7 @@ def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, pro
         print(f"Errore invio a Google Sheets: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot (Google Sheets Sync + Grafico) ---")
+    print("--- Inizio esecuzione Bot (Google Sheets Sync + Grafico Reale) ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
@@ -316,8 +349,18 @@ def run_bot():
         with open(file_path, 'w') as f:
             json.dump(dati, f)
             
+        # Generiamo il grafico locale aggiornato con i dati reali
+        chart_file = genera_grafico_chart(df)
+            
         if messaggio:
-            manda_messaggio_telegram(messaggio)
+            manda_messaggio_telegram(messaggio, chart_file)
+            
+        # Pulisci il file immagine temporaneo se esiste
+        if chart_file and os.path.exists(chart_file):
+            try:
+                os.remove(chart_file)
+            except:
+                pass
             
     except Exception as e:
         print(f"Errore durante l'esecuzione del bot: {e}")
