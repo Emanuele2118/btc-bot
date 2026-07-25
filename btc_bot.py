@@ -16,35 +16,41 @@ def manda_messaggio_telegram(testo):
         print("Credenziali Telegram non configurate.")
         return
     
-    # Usiamo un'immagine statica/dinamica pulita del grafico di Bitcoin (puoi personalizzarla o usare una vista di TradingView)
-    # Questa è un'immagine aggiornata in tempo reale del widget di TradingView per BTCUSD
-    photo_url = "https://s.tradingview.com/snapshots/b/B1lVz8xY.png" # Esempio di snapshot o grafico di riferimento
-    # In alternativa, usiamo direttamente il metodo sendPhoto di Telegram allegando un grafico URL valido:
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    # URL base per l'API di Telegram per inviare foto con didascalia
+    url_telegram = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     
+    # Usiamo un'immagine dinamica pulita del grafico di Bitcoin
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "photo": "https://images.coinbase.com/assets/coinbase-icon-v2.png", # Mettiamo un'icona o un grafico coerente
+        "photo": "https://s.tradingview.com/snapshots/c/Ca4T8E7X.png",
         "caption": testo,
         "parse_mode": "Markdown"
     }
-    
-    # Nota di fallback: se Telegram rifiuta la foto perché l'URL esterno non è un link diretto a un'immagine statica,
-    # mandiamo il messaggio testuale classico per sicurezza, oppure usiamo un link immagine stabile.
+
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url_telegram, json=payload, timeout=20)
+        
+        # Se Telegram rifiuta la foto (es. formato non valido), facciamo fallback sul messaggio di testo normale
         if response.status_code != 200:
-            # Fallback a messaggio di testo normale se la foto dà problemi di formato link
-            url_text = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            payload_text = {
+            print(f"Invio foto non riuscito (Codice: {response.status_code}). Provo con messaggio di testo.")
+            url_fallback = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            payload_fallback = {
                 "chat_id": TELEGRAM_CHAT_ID,
-                "text": testo + "\n\n📊 *Grafico live:* [Visualizza su TradingView](https://it.tradingview.com/chart/?symbol=COINBASE%3ABTCUSD)",
+                "text": testo + "\n\n📊 *Visualizza grafico live:* [Clicca qui](https://it.tradingview.com/chart/?symbol=COINBASE%3ABTCUSD)",
                 "parse_mode": "Markdown",
                 "disable_web_page_preview": False
             }
-            requests.post(url_text, json=payload_text)
+            requests.post(url_fallback, json=payload_fallback)
+            
     except Exception as e:
-        print(f"Errore invio Telegram: {e}")
+        print(f"Errore critico invio Telegram: {e}")
+        url_fallback = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload_fallback = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": testo + "\n\n📊 *Visualizza grafico live:* [Clicca qui](https://it.tradingview.com/chart/?symbol=COINBASE%3ABTCUSD)",
+            "parse_mode": "Markdown"
+        }
+        requests.post(url_fallback, json=payload_fallback)
 
 def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, profitto_usd, motivo):
     if not GOOGLE_SHEET_URL:
@@ -65,7 +71,7 @@ def registra_su_google_sheets(data_ora, tipo, prezzo, quantita, commissione, pro
         print(f"Errore invio a Google Sheets: {e}")
 
 def run_bot():
-    print("--- Inizio esecuzione Bot (Cloud Google Sheets Sync + Grafico) ---")
+    print("--- Inizio esecuzione Bot (Cloud Google Sheets Sync + Foto Grafico) ---")
     
     try:
         url_coinbase = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
