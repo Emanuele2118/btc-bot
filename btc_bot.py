@@ -201,7 +201,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, regime_me
                      color='black', fontsize=9, fontweight='bold',
                      bbox=dict(boxstyle='round,pad=0.25', fc='#f0f0f0', ec='#26a69a', alpha=0.9))
 
-        ax1.set_title(f'BTC-USD | Market Report (Regime: {regime_mercato})', color='black', fontsize=13, fontweight='bold', pad=12)
+        ax1.set_title(f'BTC-USD | Smart Strategy Report ({regime_mercato})', color='black', fontsize=13, fontweight='bold', pad=12)
         ax1.tick_params(colors='black', labelsize=9)
         ax1.grid(True, color='#e0e0e0', linestyle=':', alpha=0.7)
         
@@ -214,7 +214,7 @@ def genera_grafico_chart(df, rsi_attuale, prezzo_attuale, stato_testo, regime_me
         ax2.set_facecolor('#f4f4f4')
         ax2.axis('off')
         
-        info_testo = f" 📊  MARKET DASHBOARD\n • Prezzo: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}    |    • Regime: {regime_mercato}\n • Stato: {stato_testo}"
+        info_testo = f" 📊  SMART DASHBOARD\n • Prezzo: ${prezzo_attuale:,.2f}    |    • RSI: {rsi_attuale:.1f}    |    • Regime: {regime_mercato}\n • Stato: {stato_testo}"
         ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace',
                  verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
 
@@ -246,7 +246,7 @@ def invia_messaggio_telegram(testo, chart_path=None):
 
 # ==================== LOGICA PRINCIPALE DEL BOT ====================
 def esegui_bot():
-    print("Avvio ciclo Market Bot...")
+    print("Avvio ciclo Smart Bot (Doppio Binario)...")
     portafoglio = carica_portafoglio()
 
     df = ottieni_dati_coinbase()
@@ -270,9 +270,10 @@ def esegui_bot():
     volume_medio = df['volume_ma'].iloc[-1] if not np.isnan(df['volume_ma'].iloc[-1]) else volume_attuale
     obv_crescente = df['obv'].iloc[-1] > df['obv'].iloc[-5]
 
-    regime_mercato = "RANGE (Laterale)"
-    if abs(ema_v - ema_l) > (atr_attuale * 0.5):
-        regime_mercato = "TREND (Direzionale)"
+    # Rilevamento Regime di Mercato Dinamico
+    regime_mercato = "RANGE (Difensivo)"
+    if abs(ema_v - ema_l) > (atr_attuale * 0.4) and ema_v > ema_l and obv_crescente:
+        regime_mercato = "TREND (Aggressivo)"
 
     lotti = portafoglio.get("lotti", [])
     lotti_attivi = len(lotti)
@@ -296,7 +297,7 @@ def esegui_bot():
         profit_factor = (sum(vittorie) / abs(sum(perdite))) if len(perdite) > 0 and sum(perdite) != 0 else (99.9 if len(vittorie) > 0 else 0.0)
 
         report_giornaliero = (
-            f"📅 *RESOCONTO GIORNALIERO & STATISTICHE* 📅\n\n"
+            f"📅 *RESOCONTO GIORNALIERO SMART* 📅\n\n"
             f"• Valore Portafoglio: ${valore_portafoglio_attuale:,.2f}\n"
             f"• Variazione: ${diff_giornaliera:+,.2f} ({diff_perc:+.2f}%)\n"
             f"• Win Rate: {win_rate:.1f}%\n"
@@ -330,23 +331,22 @@ def esegui_bot():
     tempo_ultima_op = portafoglio.get("ultima_operazione_time", 0)
     puoi_operare = (timestamp_attuale - tempo_ultima_op) >= 180
 
-    # --- 1. TAKE PROFIT DINAMICO (CON VERIFICA COMMISSIONI REALI) ---
+    # --- 1. TAKE PROFIT INTELLIGENTE A DOPPIO BINARIO ---
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
         lotti_ordinati = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)
         lotto_da_vendere = lotti_ordinati[0]
         
-        # Simula ricavi, commissioni di vendita e profitto netto in dollari
         ricavo_lordo_simulato = lotto_da_vendere['quantita'] * ultimo_prezzo
         fee_vendita_simulata = ricavo_lordo_simulato * FEE_PERCENTUALE
         ricavo_netto_simulato = ricavo_lordo_simulato - fee_vendita_simulata
         profitto_netto_dollari = ricavo_netto_simulato - lotto_da_vendere['spesa']
-        
-        # Calcola la percentuale di profitto REALE netta (ripulita da fee ingresso/uscita)
         profitto_netto_perc = (profitto_netto_dollari / lotto_da_vendere['spesa']) * 100
 
-        soglia_profitto_richiesta = 1.5 if regime_mercato == "TREND (Direzionale)" else 1.1
+        # Soglia dinamica in base alla strategia attiva:
+        # - In RANGE (difensivo): prende profitti rapidi sicuri dall'1.1%
+        # - In TREND (aggressivo): lascia correre i profitti puntando a soglie più alte (es. 2.0%)
+        soglia_profitto_richiesta = 2.0 if regime_mercato == "TREND (Aggressivo)" else 1.1
         
-        # Il bot chiuderà solo se la percentuale NETTA supera la soglia O se l'RSI è in ipercomprato MA con profitto netto positivo in dollari
         condizione_TP_valida = (profitto_netto_perc >= soglia_profitto_richiesta) or ((rsi_attuale > 74) and (profitto_netto_dollari > 0))
 
         if condizione_TP_valida:
@@ -361,7 +361,7 @@ def esegui_bot():
             portafoglio.setdefault("storico_operazioni", []).append(profitto_lotto)
             
             messaggio_notifica = (
-                f"🚀 *TAKE PROFIT ESEGUITO ({regime_mercato})* 🚀\n\n"
+                f"🚀 *TAKE PROFIT ({regime_mercato})* 🚀\n\n"
                 f"• Lotto chiuso: #{lotto_da_vendere['id']}\n"
                 f"• Profitto Netto: ${profitto_lotto:+,.2f} USD ({profitto_netto_perc:+.2f}% netto)\n"
                 f"• Saldo USD: ${portafoglio['saldo_usd']:,.2f}"
@@ -371,7 +371,7 @@ def esegui_bot():
 
     # --- 2. STOP LOSS & TRAILING STOP DINAMICO ---
     if not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
-        stop_loss_effettivo_perc = -2.5
+        stop_loss_effettivo_perc = -2.2 if regime_mercato == "TREND (Aggressivo)" else -2.8
         if profitto_P_L >= 3.5:
             stop_loss_effettivo_perc = +1.5
         elif profitto_P_L >= 2.0:
@@ -392,24 +392,34 @@ def esegui_bot():
             portafoglio["ultima_operazione_time"] = timestamp_attuale
             portafoglio.setdefault("storico_operazioni", []).append(profitto_operazione)
             
-            messaggio_notifica = f"🚨 *CHIUSURA TOTALE (STOP / TRAILING)* 🚨\n\n• Profitto/Perdita: ${profitto_operazione:+,.2f}"
+            messaggio_notifica = f"🚨 *CHIUSURA DIFENSIVA (STOP LOSS)* 🚨\n\n• Profitto/Perdita: ${profitto_operazione:+,.2f}"
             azione_eseguita = True
             salva_portafoglio(portafoglio)
 
-    # --- 3. INGRESSI CON FILTRI QUANTITATIVI & OBV ---
+    # --- 3. INGRESSI AGGRESSIVI IN TREND / DIFENSIVI IN RANGE ---
     if puoi_operare and not azione_eseguita and not blocco_attivo_drawdown:
         saldo_corrente = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
-        volatilita_pct = (atr_attuale / ultimo_prezzo) * 100
-        fattore_size = 0.8 if volatilita_pct > 1.5 else (1.2 if volatilita_pct < 0.5 else 1.0)
+        
+        # Gestione dimensione lotto dinamica:
+        # - In TREND aggressivo spinge di più allocando più capitale per lotto
+        # - In RANGE prudente riduce l'esposizione
+        if regime_mercato == "TREND (Aggressivo)":
+            fattore_size = 1.25 if lotti_attivi == 0 else 1.1  # Più aggressivo se apre o se scala
+        else:
+            fattore_size = 0.85  # Prudente in laterale
+            
         capitale_lotto_dinamico = CAPITALE_PER_LOTTO * fattore_size
 
-        volume_confermato = volume_attuale >= (volume_medio * 0.7)
-        condizione_rsi_scarico = rsi_attuale < 35
+        volume_confermato = volume_attuale >= (volume_medio * (0.6 if regime_mercato == "TREND (Aggressivo)" else 0.8))
+        condizione_rsi_scarico = rsi_attuale < 38
         trend_macro_ok = ultimo_prezzo > ema_macro_15m
         
-        condizione_ingresso_valida = (condizione_rsi_scarico or (ema_v > ema_l and trend_macro_ok)) and volume_confermato and obv_crescente
+        if regime_mercato == "TREND (Aggressivo)":
+            condizione_ingresso_valida = (ema_v > ema_l and trend_macro_ok) and volume_confermato and obv_crescente
+        else:
+            condizione_ingresso_valida = condizione_rsi_scarico and volume_confermato
 
-        if lotti_attivi == 0 and condizione_ingresso_valida:
+        if lotti_attivi < MAX_LOTTI and condizione_ingresso_valida:
             costo_netto_lotto = capitale_lotto_dinamico
             fee_ingresso = costo_netto_lotto * FEE_PERCENTUALE
             costo_totale_con_fee = costo_netto_lotto + fee_ingresso
@@ -417,15 +427,16 @@ def esegui_bot():
             if saldo_corrente >= costo_totale_con_fee:
                 quantita = capitale_lotto_dinamico / ultimo_prezzo
                 portafoglio["saldo_usd"] = saldo_corrente - costo_totale_con_fee
+                nuovo_id = (lotti[-1]['id'] + 1) if lotti_attivi > 0 else 1
                 portafoglio["lotti"].append({
-                    "id": 1,
+                    "id": nuovo_id,
                     "prezzo_entrata": ultimo_prezzo,
                     "quantita": quantita,
                     "spesa": costo_totale_con_fee
                 })
                 portafoglio["ultima_operazione_time"] = timestamp_attuale
                 
-                messaggio_notifica = f"🟢 *APERTURA LOTTO (#1/{MAX_LOTTI})* 🟢\n• Prezzo: ${ultimo_prezzo:,.2f}"
+                messaggio_notifica = f"🟢 *APERTURA LOTTO SMART (#{nuovo_id}/{MAX_LOTTI} - {regime_mercato})* 🟢\n• Prezzo: ${ultimo_prezzo:,.2f}"
                 azione_eseguita = True
                 salva_portafoglio(portafoglio)
 
@@ -434,19 +445,19 @@ def esegui_bot():
     puoi_inviare_report = (timestamp_attuale - tempo_ultimo_report) >= 300
 
     if not azione_eseguita and puoi_inviare_report:
-        strategia_desc = "Trend-Following (Inseguimento trend)" if regime_mercato == "TREND (Direzionale)" else "Mean-Reversion (Range Trading)"
-        previsione_mercato = "Possibile rimbalzo tecnico in arrivo." if rsi_attuale < 40 else ("Area di ipercomprato potenziale." if rsi_attuale > 65 else "Mercato in equilibrio, in attesa di volumi.")
+        strategia_desc = "Aggressiva (Trend-Following + Lotti Dinamici)" if regime_mercato == "TREND (Aggressivo)" else "Difensiva (Range Trading + Profitto Rapido)"
+        previsione_mercato = "Forte spinta rialzista in corso." if regime_mercato == "TREND (Aggressivo)" else "Fase di attesa e protezione capitale."
 
         dettagli_posizioni = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Performance: {profitto_P_L:+.2f}%\n" if lotti_attivi > 0 else ""
 
         messaggio_notifica = (
-            f"📈 *REPORT DI MERCATO* 📈\n\n"
+            f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
             f"• Prezzo BTC: ${ultimo_prezzo:,.2f}\n"
             f"• Regime: {regime_mercato}\n"
             f"• RSI: {rsi_attuale:.1f} | ATR: ${atr_attuale:.2f}\n\n"
             f"{dettagli_posizioni}"
-            f"🛠 *Strategia in uso:*\n{strategia_desc}\n\n"
-            f"🔮 *Previsione Grafico:*\n{previsione_mercato}"
+            f"🛠 *Strategia Attiva:*\n{strategia_desc}\n\n"
+            f"🔮 *Analisi Dinamica:*\n{previsione_mercato}"
         )
         portafoglio["ultimo_report_time"] = timestamp_attuale
         salva_portafoglio(portafoglio)
