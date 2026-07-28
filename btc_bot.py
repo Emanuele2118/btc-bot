@@ -147,7 +147,7 @@ class ExecutionEngine:
             if "saldo_usd" not in data: data["saldo_usd"] = CAPITALE_INIZIALE
             if "lotti" not in data: data["lotti"] = []
             if "ultima_operazione_time" not in data: data["ultima_operazione_time"] = 0
-            if "ultimo_report_time" not in data: data["ultimo_report_time"] = 0
+            if "ultimo_report_time" not in data: data["ultimo_report_time"] = 0.0
             if "valore_iniziale_giornata" not in data: data["valore_iniziale_giornata"] = CAPITALE_INIZIALE
             if "data_ultima_registrazione" not in data: data["data_ultima_registrazione"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if "blocco_drawdown_fino" not in data: data["blocco_drawdown_fino"] = 0.0
@@ -156,7 +156,7 @@ class ExecutionEngine:
         
         return {
             "saldo_usd": CAPITALE_INIZIALE, "lotti": [], "ultima_operazione_time": 0,
-            "ultimo_report_time": 0, "valore_iniziale_giornata": CAPITALE_INIZIALE,
+            "ultimo_report_time": 0.0, "valore_iniziale_giornata": CAPITALE_INIZIALE,
             "data_ultima_registrazione": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "blocco_drawdown_fino": 0.0, "storico_operazioni": []
         }
@@ -377,8 +377,14 @@ def esegui_ciclo():
                 azione_eseguita = True
                 ExecutionEngine.salva_portafoglio(portafoglio)
 
-    # REPORT PERIODICO
-    puoi_report = (ts - portafoglio.get("ultimo_report_time", 0)) >= 300
+    # REPORT PERIODICO (BLINDATO CON TIMER RIGOROSO)
+    ultimo_rep = portafoglio.get("ultimo_report_time", 0.0)
+    if ultimo_rep is None:
+        ultimo_rep = 0.0
+        
+    tempo_trascorso = ts - ultimo_rep
+    puoi_report = tempo_trascorso >= 300
+
     if not azione_eseguita and puoi_report:
         dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo.\n"
 
@@ -391,9 +397,8 @@ def esegui_ciclo():
         )
         portafoglio["ultimo_report_time"] = ts
         ExecutionEngine.salva_portafoglio(portafoglio)
-
-    chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
-    if azione_eseguita or puoi_report:
+        
+        chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
         ExecutionEngine.invia_telegram(messaggio, chart)
 
 if __name__ == "__main__":
