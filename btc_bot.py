@@ -394,4 +394,27 @@ def esegui_bot_pro():
         strat_desc = "Aggressiva (Trend-Following + Lotti Dinamici)" if regime == "TREND (Aggressivo)" else "Difensiva (Range Trading + Profitto Rapido)"
         prev = "Forte spinta rialzista in corso." if regime == "TREND (Aggressivo)" else "Fase di attesa e protezione capitale."
         
-        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Re
+        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}% (Picco: {max_pnl_raggiunto:+.2f}%)\n" if lotti_attivi > 0 else "• Nessun lotto attivo al momento.\n"
+
+        messaggio = (
+            f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
+            f"Aggiornamento rapido:\n"
+            f"• Bitcoin viaggia a ${prezzo:,.2f}\n"
+            f"• Situazione: {regime}\n"
+            f"• RSI a {rsi:.1f} e ATR a ${atr:.2f}\n\n"
+            f"{dett_pos}\n"
+            f"🛠 *Strategia:*\n{strat_desc}\n\n"
+            f"🔮 *Idea:*\n{prev}"
+        )
+        portafoglio["ultimo_report_time"] = ts
+        ExecutionEngine.salva_portafoglio(portafoglio)
+
+    chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
+    if azione_eseguita or puoi_report:
+        ExecutionEngine.invia_telegram(messaggio, chart)
+
+if __name__ == "__main__":
+    try:
+        esegui_bot_pro()
+    except Exception as e:
+        print(f"Errore critico: {e}")
