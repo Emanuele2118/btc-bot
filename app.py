@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import requests
 
 # Impostazioni pagina
 st.set_page_config(page_title="MetaTrader Bot History", page_icon="📈", layout="centered")
@@ -13,15 +14,6 @@ st.markdown("""
     }
     .stApp {
         background-color: #ffffff;
-    }
-    .header-tabs {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background-color: #f7f7f7;
-        padding: 8px;
-        border-radius: 8px;
-        border: 1px solid #e0e0e0;
     }
     .trade-card {
         background-color: #ffffff;
@@ -49,61 +41,76 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# URL Raw del tuo file portfolio.json su GitHub
+# Sostituisci TUO-USERNAME con il tuo nome utente GitHub se necessario
+GITHUB_JSON_URL = "https://raw.githubusercontent.com/Emanuele2118/btc-bot/main/portfolio.json"
+
+@st.cache_data(ttl=30) # Aggiorna i dati ogni 30 secondi
+def load_portfolio_data():
+    try:
+        response = requests.get(GITHUB_JSON_URL)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        pass
+    return None
+
+data = load_portfolio_data()
+
 # Tab di navigazione superiore (Positions, Orders, Deals)
 tab1, tab2, tab3 = st.tabs(["Positions", "Orders", "Deals"])
 
 with tab1:
-    # --- INSERISCI QUI I DATI DEL TUO BOT ---
-    # Puoi collegare questo dataframe al tuo foglio Google Sheets o al database del tuo bot
-    trades_data = [
-        {"symbol": "BTCUSD", "type": "sell", "volume": 0.25, "open": 64250.00, "close": 63100.00, "profit": 287.50, "date": "2026.07.28 11:29:19"},
-        {"symbol": "BTCUSD", "type": "sell", "volume": 0.25, "open": 64100.00, "close": 63500.00, "profit": 150.00, "date": "2026.07.28 12:15:40"},
-        {"symbol": "BTCUSD", "type": "buy", "volume": 0.50, "open": 62800.00, "close": 63400.00, "profit": 300.00, "date": "2026.07.28 14:02:10"},
-    ]
-
-    # Calcoli finanziari dinamici basati sulle operazioni del bot
-    deposit = 3000.00
-    total_profit = sum(t["profit"] for t in trades_data)
-    swap = -4.50
-    commission = 0.00
-    balance = deposit + total_profit + swap + commission
-
-    # Render delle operazioni stile MetaTrader
-    for t in trades_data:
-        color_type = "#ff3b30" if t["type"] == "sell" else "#34c759"
-        color_profit = "#007aff" if t["profit"] >= 0 else "#ff3b30"
+    if not data:
+        st.warning("⚠️ Impossibile connettersi a portfolio.json su GitHub. Verifica il link o la connessione.")
+    else:
+        # Estrazione dati reali dal JSON
+        saldo_usd = data.get("saldo_usd", 0.0)
+        lotti = data.get("Lotti", [])
         
+        st.subheader("Posizioni Attive (Lotti)")
+        
+        if not lotti:
+            st.info("Nessun lotto attivo al momento.")
+        else:
+            for l in lotti:
+                # Gestione flessibile dei campi salvati nel json
+                l_id = l.get("id", "-")
+                prezzo = l.get("prezzo_entrata", l.get("prezzo", 0.0))
+                quantita = l.get("quantita", 0.0)
+                spesa = l.get("spesa", 0.0)
+                
+                st.markdown(f"""
+                    <div class="trade-card">
+                        <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 14px;">
+                            <div>BTCUSD, <span style="color: #34c759;">BUY</span> {quantita}</div>
+                            <div style="color: #007aff;">ID: {l_id}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666666; margin-top: 4px;">
+                            <div>Prezzo Entrata: {prezzo}</div>
+                            <div>Spesa: ${spesa:,.2f}</div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        # Box Riepilogo Finanziario basato sui dati reali
+        deposit = data.get("valore_iniziale_giornata", 3000.0)
+        balance = saldo_usd
+
         st.markdown(f"""
-            <div class="trade-card">
-                <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 14px;">
-                    <div>{t['symbol']}, <span style="color: {color_type};">{t['type']}</span> {t['volume']}</div>
-                    <div style="color: {color_profit};">{t['profit']:+.2f}</div>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666666; margin-top: 4px;">
-                    <div>{t['open']} → {t['close']}</div>
-                    <div>{t['date']}</div>
+            <div class="summary-box">
+                <div class="summary-row"><span>Valore Iniziale</span><span>{deposit:,.2f}</span></div>
+                <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
+                    <span>Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{balance:,.2f}</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-    # Box Riepilogo Finanziario in basso
-    st.markdown(f"""
-        <div class="summary-box">
-            <div class="summary-row"><span>Deposit</span><span>{deposit:,.2f}</span></div>
-            <div class="summary-row"><span>Profit</span><span style="color: #007aff;">{total_profit:,.2f}</span></div>
-            <div class="summary-row"><span>Swap</span><span>{swap:,.2f}</span></div>
-            <div class="summary-row"><span>Commission</span><span>{commission:,.2f}</span></div>
-            <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
-                <span>Balance</span><span style="color: #007aff; font-size: 16px;">{balance:,.2f}</span>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
 with tab2:
-    st.info("Nessun ordine pendente al momento.")
+    st.info("Nessun ordine pendente.")
 
 with tab3:
-    st.info("Storico deal completati sincronizzato con il bot.")
+    st.info("Storico operazioni sincronizzato dal bot.")
 
 # Barra di navigazione inferiore stile app mobile
 st.markdown("<br><br>", unsafe_allow_html=True)
