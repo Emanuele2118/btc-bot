@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 
 # Impostazioni pagina
-st.set_page_config(page_title="MetaTrader Light", page_icon="📈", layout="centered")
+st.set_page_config(page_title="MetaTrader Bot History", page_icon="📈", layout="centered")
 
-# CSS personalizzato per ricreare lo stile MetaTrader in modalità chiara (bianca)
+# CSS personalizzato per lo stile MetaTrader in modalità chiara (bianca)
 st.markdown("""
     <style>
     .main {
@@ -14,90 +14,107 @@ st.markdown("""
     .stApp {
         background-color: #ffffff;
     }
-    h1, h2, h3 {
-        color: #000000;
-    }
-    .market-card {
-        border-bottom: 1px solid #e0e0e0;
-        padding: 10px 0;
+    .header-tabs {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        background-color: #f7f7f7;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
     }
-    .symbol {
-        font-weight: bold;
-        font-size: 16px;
-        color: #000000;
+    .trade-card {
+        background-color: #ffffff;
+        border-bottom: 1px solid #eeeeee;
+        padding: 10px 0;
     }
-    .spread {
-        font-size: 12px;
+    .summary-box {
+        background-color: #f9f9f9;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 20px;
+    }
+    .summary-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 14px;
+        padding: 4px 0;
         color: #666666;
     }
-    .price-bid {
-        color: #0055ff;
-        font-weight: bold;
-        font-size: 16px;
-        text-align: right;
-    }
-    .price-ask {
-        color: #ff0000;
-        font-weight: bold;
-        font-size: 16px;
-        text-align: right;
+    .summary-row span:last-child {
+        color: #000000;
+        font-weight: 500;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Intestazione con Tab Simple / Advanced
-col1, col2 = st.columns([3, 1])
-with col1:
-    tab_mode = st.radio("Modalità", ["Simple", "Advanced"], horizontal=True, label_visibility="collapsed")
-with col2:
-    if st.button("➕", use_container_width=True):
-        st.toast("Aggiungi simbolo cliccato")
+# Tab di navigazione superiore (Positions, Orders, Deals)
+tab1, tab2, tab3 = st.tabs(["Positions", "Orders", "Deals"])
 
-st.divider()
+with tab1:
+    # --- INSERISCI QUI I DATI DEL TUO BOT ---
+    # Puoi collegare questo dataframe al tuo foglio Google Sheets o al database del tuo bot
+    trades_data = [
+        {"symbol": "BTCUSD", "type": "sell", "volume": 0.25, "open": 64250.00, "close": 63100.00, "profit": 287.50, "date": "2026.07.28 11:29:19"},
+        {"symbol": "BTCUSD", "type": "sell", "volume": 0.25, "open": 64100.00, "close": 63500.00, "profit": 150.00, "date": "2026.07.28 12:15:40"},
+        {"symbol": "BTCUSD", "type": "buy", "volume": 0.50, "open": 62800.00, "close": 63400.00, "profit": 300.00, "date": "2026.07.28 14:02:10"},
+    ]
 
-# Dati di mercato simulati (ispirati allo screenshot di destra)
-data = [
-    {"time": "12:11:45", "symbol": "EURUSD", "spread": 21, "bid": "1.1554⁶", "ask": "1.1556⁷", "low": "1.15483", "high": "1.15750"},
-    {"time": "12:11:45", "symbol": "GBPUSD", "spread": 19, "bid": "1.3476⁰", "ask": "1.3477⁹", "low": "1.34493", "high": "1.34998"},
-    {"time": "12:11:45", "symbol": "USDJPY", "spread": 24, "bid": "113.44⁰", "ask": "113.46⁴", "low": "113.341", "high": "113.656"},
-    {"time": "12:11:43", "symbol": "USDCAD", "spread": 25, "bid": "1.2456⁶", "ask": "1.2459¹", "low": "1.24382", "high": "1.24643"},
-    {"time": "12:11:44", "symbol": "USDCHF", "spread": 21, "bid": "0.9149⁷", "ask": "0.9151⁸", "low": "0.91162", "high": "0.91498"},
-    {"time": "12:11:44", "symbol": "NZDUSD", "spread": 35, "bid": "0.7135³", "ask": "0.7138⁸", "low": "0.71022", "high": "0.71523"},
-    {"time": "12:11:42", "symbol": "AUDUSD", "spread": 20, "bid": "0.7394⁸", "ask": "0.7396⁸", "low": "0.73832", "high": "0.74119"},
-    {"time": "12:11:44", "symbol": "AUDNZD", "spread": 75, "bid": "1.0358⁸", "ask": "1.0366³", "low": "1.03555", "high": "1.04009"},
-    {"time": "12:11:35", "symbol": "AUDCAD", "spread": 60, "bid": "0.9210⁰", "ask": "0.9216⁰", "low": "0.92000", "high": "0.92225"},
-]
+    # Calcoli finanziari dinamici basati sulle operazioni del bot
+    deposit = 3000.00
+    total_profit = sum(t["profit"] for t in trades_data)
+    swap = -4.50
+    commission = 0.00
+    balance = deposit + total_profit + swap + commission
 
-# Rendering della lista in stile MetaTrader Light
-for row in data:
-    c1, c2, c3 = st.columns([2, 2, 2])
-    with c1:
-        st.markdown(f"<span style='font-size: 11px; color: #888;'>{row['time']}</span><br><b style='font-size: 15px; color: #000;'>{row['symbol']}</b><br><span style='font-size: 12px; color: #666;'>Spread: {row['spread']}</span>", unsafe_allow_html=True)
-    with c2:
-        if tab_mode == "Advanced":
-            st.markdown(f"<div style='text-align: right;'><span style='color: #0055ff; font-weight: bold; font-size: 16px;'>{row['bid']}</span><br><span style='font-size: 11px; color: #666;'>Low: {row['low']}</span></div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div style='text-align: right;'><span style='color: #0055ff; font-weight: bold; font-size: 16px;'>{row['bid']}</span></div>", unsafe_allow_html=True)
-    with c3:
-        if tab_mode == "Advanced":
-            st.markdown(f"<div style='text-align: right;'><span style='color: #ff0000; font-weight: bold; font-size: 16px;'>{row['ask']}</span><br><span style='font-size: 11px; color: #666;'>High: {row['high']}</span></div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div style='text-align: right;'><span style='color: #ff0000; font-weight: bold; font-size: 16px;'>{row['ask']}</span></div>", unsafe_allow_html=True)
-    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+    # Render delle operazioni stile MetaTrader
+    for t in trades_data:
+        color_type = "#ff3b30" if t["type"] == "sell" else "#34c759"
+        color_profit = "#007aff" if t["profit"] >= 0 else "#ff3b30"
+        
+        st.markdown(f"""
+            <div class="trade-card">
+                <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 14px;">
+                    <div>{t['symbol']}, <span style="color: {color_type};">{t['type']}</span> {t['volume']}</div>
+                    <div style="color: {color_profit};">{t['profit']:+.2f}</div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666666; margin-top: 4px;">
+                    <div>{t['open']} → {t['close']}</div>
+                    <div>{t['date']}</div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-# Barra di navigazione inferiore simulata
+    # Box Riepilogo Finanziario in basso
+    st.markdown(f"""
+        <div class="summary-box">
+            <div class="summary-row"><span>Deposit</span><span>{deposit:,.2f}</span></div>
+            <div class="summary-row"><span>Profit</span><span style="color: #007aff;">{total_profit:,.2f}</span></div>
+            <div class="summary-row"><span>Swap</span><span>{swap:,.2f}</span></div>
+            <div class="summary-row"><span>Commission</span><span>{commission:,.2f}</span></div>
+            <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
+                <span>Balance</span><span style="color: #007aff; font-size: 16px;">{balance:,.2f}</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+with tab2:
+    st.info("Nessun ordine pendente al momento.")
+
+with tab3:
+    st.info("Storico deal completati sincronizzato con il bot.")
+
+# Barra di navigazione inferiore stile app mobile
 st.markdown("<br><br>", unsafe_allow_html=True)
 nav1, nav2, nav3, nav4, nav5 = st.columns(5)
 with nav1:
-    st.markdown("<div style='text-align: center; color: #0055ff; font-size: 11px;'>📊<br><b>Quotes</b></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>📊<br>Quotes</div>", unsafe_allow_html=True)
 with nav2:
-    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>📈<br>Chart</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>📈<br>Chart</div>", unsafe_allow_html=True)
 with nav3:
-    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>💱<br>Trade</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>💱<br>Trade</div>", unsafe_allow_html=True)
 with nav4:
-    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>🕒<br>History</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #007aff; font-size: 11px;'>🕒<br><b>History</b></div>", unsafe_allow_html=True)
 with nav5:
-    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>⚙️<br>Settings</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>⚙️<br>Settings</div>", unsafe_allow_html=True)
