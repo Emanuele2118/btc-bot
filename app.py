@@ -5,7 +5,7 @@ import requests
 # Impostazioni pagina
 st.set_page_config(page_title="MetaTrader Bot History", page_icon="📈", layout="centered")
 
-# CSS personalizzato per lo stile MetaTrader in modalità chiara (bianca)
+# CSS personalizzato per correggere i colori del testo in modalità chiara (bianca)
 st.markdown("""
     <style>
     .main {
@@ -18,7 +18,17 @@ st.markdown("""
     .trade-card {
         background-color: #ffffff;
         border-bottom: 1px solid #eeeeee;
-        padding: 10px 0;
+        padding: 12px 0;
+    }
+    .trade-title {
+        font-weight: 600;
+        font-size: 14px;
+        color: #000000;
+    }
+    .trade-details {
+        font-size: 12px;
+        color: #555555;
+        margin-top: 4px;
     }
     .summary-box {
         background-color: #f9f9f9;
@@ -32,7 +42,7 @@ st.markdown("""
         justify-content: space-between;
         font-size: 14px;
         padding: 4px 0;
-        color: #666666;
+        color: #444444;
     }
     .summary-row span:last-child {
         color: #000000;
@@ -41,11 +51,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# URL Raw del tuo file portfolio.json su GitHub
-# Sostituisci TUO-USERNAME con il tuo nome utente GitHub se necessario
+# URL Raw del file portfolio.json su GitHub
 GITHUB_JSON_URL = "https://raw.githubusercontent.com/Emanuele2118/btc-bot/main/portfolio.json"
 
-@st.cache_data(ttl=30) # Aggiorna i dati ogni 30 secondi
+@st.cache_data(ttl=30)
 def load_portfolio_data():
     try:
         response = requests.get(GITHUB_JSON_URL)
@@ -57,24 +66,22 @@ def load_portfolio_data():
 
 data = load_portfolio_data()
 
-# Tab di navigazione superiore (Positions, Orders, Deals)
+# Tab di navigazione superiore
 tab1, tab2, tab3 = st.tabs(["Positions", "Orders", "Deals"])
 
 with tab1:
     if not data:
-        st.warning("⚠️ Impossibile connettersi a portfolio.json su GitHub. Verifica il link o la connessione.")
+        st.warning("⚠️ Impossibile connettersi a portfolio.json su GitHub.")
     else:
-        # Estrazione dati reali dal JSON
         saldo_usd = data.get("saldo_usd", 0.0)
         lotti = data.get("Lotti", [])
         
-        st.subheader("Posizioni Attive (Lotti)")
+        st.markdown("<h3 style='color: #000000; font-size: 18px;'>Posizioni Attive (Lotti)</h3>", unsafe_allow_html=True)
         
         if not lotti:
             st.info("Nessun lotto attivo al momento.")
         else:
             for l in lotti:
-                # Gestione flessibile dei campi salvati nel json
                 l_id = l.get("id", "-")
                 prezzo = l.get("prezzo_entrata", l.get("prezzo", 0.0))
                 quantita = l.get("quantita", 0.0)
@@ -82,18 +89,17 @@ with tab1:
                 
                 st.markdown(f"""
                     <div class="trade-card">
-                        <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 14px;">
-                            <div>BTCUSD, <span style="color: #34c759;">BUY</span> {quantita}</div>
+                        <div style="display: flex; justify-content: space-between;" class="trade-title">
+                            <div>BTCUSD, <span style="color: #34c759;">BUY</span> <span style="color: #333333;">{quantita}</span></div>
                             <div style="color: #007aff;">ID: {l_id}</div>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666666; margin-top: 4px;">
-                            <div>Prezzo Entrata: {prezzo}</div>
-                            <div>Spesa: ${spesa:,.2f}</div>
+                        <div style="display: flex; justify-content: space-between;" class="trade-details">
+                            <div>Prezzo Entrata: <b>{prezzo}</b></div>
+                            <div>Spesa: <b>${spesa:,.2f}</b></div>
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
-        # Box Riepilogo Finanziario basato sui dati reali
         deposit = data.get("valore_iniziale_giornata", 3000.0)
         balance = saldo_usd
 
@@ -101,7 +107,7 @@ with tab1:
             <div class="summary-box">
                 <div class="summary-row"><span>Valore Iniziale</span><span>{deposit:,.2f}</span></div>
                 <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
-                    <span>Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{balance:,.2f}</span>
+                    <span style="color: #000000;">Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{balance:,.2f}</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
