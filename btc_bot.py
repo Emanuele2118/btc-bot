@@ -278,7 +278,7 @@ def esegui_bot_pro():
     azione_eseguita = False
     messaggio = ""
     stato_dash = f"Pos ({lotti_attivi}/{MAX_LOTTI}) | P&L: {pnl_perc:+.2f}% | Regime: {regime}"
-    puoi_operare = (ts - portafoglio.get("ultima_operazione_time", 0)) >= 180
+    puoi_operare = (ts - portafoglio.get("ultima_operazione_time", 0)) >= 900  # Cooldown aumentato a 15 min
 
     # 1. TAKE PROFIT
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
@@ -353,35 +353,37 @@ def esegui_bot_pro():
             if saldo >= costo_tot:
                 quantita = capitale_lotto / prezzo
                 portafoglio["saldo_usd"] = saldo - costo_tot
-                nuovo_id = (lotti[-1]['id'] + 1) if lotti_attivi > 0 else 1
-                portafoglio["lotti"].append({"id": nuovo_id, "prezzo_entrata": prezzo, "quantita": quantita, "spesa": costo_tot})
+                
+                # ID progressivo basato sulla dimensione reale attuale della lista
+                nuovo_id = len(portafoglio["lotti"]) + 1
+                
+                portafoglio["lotti"].append({
+                    "id": nuovo_id, 
+                    "prezzo_entrata": prezzo, 
+                    "quantita": quantita, 
+                    "spesa": costo_tot
+                })
                 portafoglio["ultima_operazione_time"] = ts
                 
-                # Ricalcoliamo subito i valori aggiornati per il messaggio di acquisto con la percentuale
-                q_tot_agg = sum(l['quantita'] for l in portafoglio["lotti"])
-                spesa_tot_agg = sum(l['spesa'] for l in portafoglio["lotti"])
-                prezzo_medio_agg = spesa_tot_agg / q_tot_agg
-                pnl_iniziale_perc = ((prezzo - prezzo_medio_agg) / prezzo_medio_agg) * 100
-
+                # Messaggio di acquisto ripulito (senza percentuale sul singolo lotto)
                 messaggio = (
                     f"🟢 *APERTURA LOTTO SMART (#{nuovo_id}/{MAX_LOTTI} - {regime})* 🟢\n\n"
                     f"Ci siamo, ho appena aperto il lotto #{nuovo_id}/{MAX_LOTTI} ({regime}).\n"
                     f"• Prezzo d'ingresso: ${prezzo:,.2f}\n"
-                    f"• Rendimento attuale lotto: {pnl_iniziale_perc:+.2f}%\n"
                     f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}\n"
                     f"Vediamo come evolve."
                 )
                 azione_eseguita = True
                 ExecutionEngine.salva_portafoglio(portafoglio)
 
-    # REPORT PERIODICO (con inclusione della percentuale di rendimento/P&L)
+    # REPORT PERIODICO (Con inclusione della percentuale di rendimento/P&L)
     puoi_report = (ts - portafoglio.get("ultimo_report_time", 0)) >= 300
     if not azione_eseguita and puoi_report:
         strat_desc = "Aggressiva (Trend-Following + Lotti Dinamici)" if regime == "TREND (Aggressivo)" else "Difensiva (Range Trading + Profitto Rapido)"
         prev = "Forte spinta rialzista in corso." if regime == "TREND (Aggressivo)" else "Fase di attesa e protezione capitale."
         
-        # Inseriamo la percentuale di rendimento (pnl_perc) nel report se ci sono lotti attivi
-        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo al momento.\n"
+        # Inseriamo la percentuale di rendimento (pnl_perc) sempre nel report periodico se ci sono lotti attivi
+        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento attuale (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo al momento.\n"
 
         messaggio = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
