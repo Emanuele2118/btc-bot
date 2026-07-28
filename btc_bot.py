@@ -21,8 +21,8 @@ PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 600.0   # Ridotto per consentire più lotti attivi
-MAX_LOTTI = 15                # Aumentato a 15 lotti massimi
-FEE_PERCENTUALE = 0.001       
+MAX_LOTTI = 15               # Aumentato a 15 lotti massimi
+FEE_PERCENTUALE = 0.001        
 MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
 # ==================== 1. DATA ENGINE ====================
@@ -228,8 +228,12 @@ class ExecutionEngine:
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header("Content-type", "text/html")
         self.end_headers()
-        self.wfile.write(b"Bot is active and running 24/7!")
+        self.wfile.write(b"<html><body><h1>Bot is active and running 24/7!</h1></body></html>")
+    
+    def log_message(self, format, *args):
+        return
 
 def avvia_server_web():
     port = int(os.environ.get("PORT", 10000))
