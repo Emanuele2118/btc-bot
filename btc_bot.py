@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -14,20 +16,19 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GOOGLE_SHEET_URL = os.environ.get("GOOGLE_SHEET_URL")
 
-PORTFOLIO_FILE = "portfolio_pro.json"
-PORTFOLIO_BACKUP_FILE = "portfolio_pro_backup.json"
+PORTFOLIO_FILE = "portfolio.json"
+PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
-CAPITALE_PER_LOTTO = 2500.0   
-MAX_LOTTI = 4                 
-FEE_PERCENTUALE = 0.001       # 0.10% commissione Taker
-MAX_DAILY_DRAWDOWN_PCT = 4.0  # Blocco di emergenza giornaliero più rigido
+CAPITALE_PER_LOTTO = 600.0   
+MAX_LOTTI = 15               
+FEE_PERCENTUALE = 0.001        
+MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
-# ==================== 1. DATA ENGINE (Motore Dati) ====================
+# ==================== 1. DATA ENGINE ====================
 class DataEngine:
     @staticmethod
     def ottieni_dati():
-        # Tentativo primario su Coinbase
         url = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
         headers = {"User-Agent": "Mozilla/5.0"}
         try:
@@ -50,7 +51,6 @@ class DataEngine:
         except Exception as e:
             print(f"Errore connessione Coinbase: {e}")
 
-        # Fallback su Binance
         try:
             url_binance = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=250"
             response = requests.get(url_binance, timeout=10)
@@ -72,7 +72,7 @@ class DataEngine:
 
         return None
 
-# ==================== 2. RISK MANAGEMENT ENGINE (Il Custode) ====================
+# ==================== 2. RISK MANAGEMENT ENGINE ====================
 class RiskManagementEngine:
     @staticmethod
     def calcola_atr(df, periodo=14):
@@ -92,14 +92,13 @@ class RiskManagementEngine:
             return True
         return timestamp_attuale < portafoglio.get("blocco_drawdown_fino", 0.0)
 
-# ==================== 3. STRATEGY ENGINE (Il Cervello) ====================
+# ==================== 3. STRATEGY ENGINE ====================
 class StrategyEngine:
     @staticmethod
     def analizza_mercato(df):
         df['ema_veloce'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['ema_lenta'] = df['Close'].ewm(span=50, adjust=False).mean()
         
-        # RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -119,7 +118,6 @@ class StrategyEngine:
         volume_medio = df['volume_ma'].iloc[-1] if not np.isnan(df['volume_ma'].iloc[-1]) else volume_attuale
         obv_crescente = df['obv'].iloc[-1] > df['obv'].iloc[-5]
 
-        # Rilevamento Regime
         regime = "RANGE (Difensivo)"
         if abs(ema_v - ema_l) > (atr_attuale * 0.4) and ema_v > ema_l and obv_crescente:
             regime = "TREND (Aggressivo)"
@@ -149,19 +147,18 @@ class ExecutionEngine:
             if "saldo_usd" not in data: data["saldo_usd"] = CAPITALE_INIZIALE
             if "lotti" not in data: data["lotti"] = []
             if "ultima_operazione_time" not in data: data["ultima_operazione_time"] = 0
-            if "ultimo_report_time" not in data: data["ultimo_report_time"] = 0
+            if "ultimo_report_time" not in data: data["ultimo_report_time"] = 0.0
             if "valore_iniziale_giornata" not in data: data["valore_iniziale_giornata"] = CAPITALE_INIZIALE
             if "data_ultima_registrazione" not in data: data["data_ultima_registrazione"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if "blocco_drawdown_fino" not in data: data["blocco_drawdown_fino"] = 0.0
             if "storico_operazioni" not in data: data["storico_operazioni"] = []
-            if "max_pnl_raggiunto" not in data: data["max_pnl_raggiunto"] = 0.0
             return data
         
         return {
             "saldo_usd": CAPITALE_INIZIALE, "lotti": [], "ultima_operazione_time": 0,
-            "ultimo_report_time": 0, "valore_iniziale_giornata": CAPITALE_INIZIALE,
+            "ultimo_report_time": 0.0, "valore_iniziale_giornata": CAPITALE_INIZIALE,
             "data_ultima_registrazione": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            "blocco_drawdown_fino": 0.0, "storico_operazioni": [], "max_pnl_raggiunto": 0.0
+            "blocco_drawdown_fino": 0.0, "storico_operazioni": []
         }
 
     @staticmethod
@@ -171,6 +168,22 @@ class ExecutionEngine:
             with open(PORTFOLIO_BACKUP_FILE, 'w') as f: json.dump(portafoglio, f, indent=4)
         except Exception as e:
             print(f"Errore salvataggio: {e}")
+
+    @staticmethod
+    def invia_a_google_sheets(tipo_operazione, prezzo, quantita, profitto, saldo):
+        if not GOOGLE_SHEET_URL: return
+        try:
+            payload = {
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "tipo": tipo_operazione,
+                "prezzo": prezzo,
+                "quantita": quantita,
+                "profitto": profitto,
+                "saldo": saldo
+            }
+            requests.post(GOOGLE_SHEET_URL, json=payload, timeout=10)
+        except Exception as e:
+            print(f"Errore invio Google Sheets: {e}")
 
     @staticmethod
     def invia_telegram(testo, chart_path=None):
@@ -215,7 +228,7 @@ class ExecutionEngine:
             ax2 = fig.add_subplot(gs[1])
             ax2.set_facecolor('#f4f4f4')
             ax2.axis('off')
-            info_testo = f" 📊  PRO ENGINE DASHBOARD\n • Prezzo: ${prezzo:,.2f}    |    • RSI: {rsi:.1f}    |    • Regime: {regime}\n • Stato: {stato}"
+            info_testo = f" PRO ENGINE DASHBOARD\n • Prezzo: ${prezzo:,.2f}    |    • RSI: {rsi:.1f}    |    • Regime: {regime}\n • Stato: {stato}"
             ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace', verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
 
             plt.tight_layout()
@@ -227,8 +240,29 @@ class ExecutionEngine:
             print(f"Errore grafico: {e}")
             return None
 
+# ==================== WEB SERVER PER RENDER (WEB SERVICE) ====================
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"<html><body><h1>Bot is active and running 24/7!</h1></body></html>")
+    
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        return
+
+def avvia_server_web():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
+    server.serve_forever()
+
 # ==================== MAIN PIPELINE ====================
-def esegui_bot_pro():
+def esegui_ciclo():
     portafoglio = ExecutionEngine.carica_portafoglio()
     df = DataEngine.ottieni_dati()
     if df is None or len(df) < 100: return
@@ -241,7 +275,6 @@ def esegui_bot_pro():
     ts = now_utc.timestamp()
     oggi_str = now_utc.strftime("%Y-%m-%d")
 
-    # Resoconto Giornaliero
     if portafoglio.get("data_ultima_registrazione", oggi_str) != oggi_str:
         val_portafoglio = portafoglio["saldo_usd"] + sum(l['quantita'] * prezzo for l in lotti)
         val_ieri = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
@@ -254,9 +287,9 @@ def esegui_bot_pro():
 
         msg_giorno = (
             f"📅 *RESOCONTO GIORNALIERO SMART* 📅\n\n"
-            f"Oh, facciamo un punto della situazione oggi: portafoglio totale a ${val_portafoglio:,.2f}, "
+            f"Portafoglio totale a ${val_portafoglio:,.2f}, "
             f"siamo a ${diff:+,.2f} ({diff_p:+.2f}%).\n"
-            f"Win rate del {win_rate:.1f}%. Insomma, ci siamo."
+            f"Win rate del {win_rate:.1f}%."
         )
         ExecutionEngine.invia_telegram(msg_giorno)
         portafoglio["valore_iniziale_giornata"] = val_portafoglio
@@ -279,46 +312,36 @@ def esegui_bot_pro():
     azione_eseguita = False
     messaggio = ""
     stato_dash = f"Pos ({lotti_attivi}/{MAX_LOTTI}) | P&L: {pnl_perc:+.2f}% | Regime: {regime}"
-    puoi_operare = (ts - portafoglio.get("ultima_operazione_time", 0)) >= 180
+    puoi_operare = (ts - portafoglio.get("ultima_operazione_time", 0)) >= 900  
 
-    # Gestione del picco massimo per il Trailing Take Profit
-    if lotti_attivi > 0 and prezzo_medio > 0:
-        max_pnl_raggiunto = portafoglio.get("max_pnl_raggiunto", pnl_perc)
-        if pnl_perc > max_pnl_raggiunto:
-            max_pnl_raggiunto = pnl_perc
-            portafoglio["max_pnl_raggiunto"] = max_pnl_raggiunto
-    else:
-        portafoglio["max_pnl_raggiunto"] = 0.0
-        max_pnl_raggiunto = 0.0
-
-    # 1. TRAILING TAKE PROFIT DINAMICO
-    soglia_attivazione_trailing = 0.30  # Si attiva se il profitto supera almeno +0.30%
-    distacco_ritracciamento = 0.12     # Vende se scende dello 0.12% rispetto al picco massimo toccato
-
+    # 1. TAKE PROFIT
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
-        if max_pnl_raggiunto >= soglia_attivazione_trailing and (max_pnl_raggiunto - pnl_perc) >= distacco_ritracciamento:
-            ricavo_tot = q_tot * prezzo
-            fee_uscita = ricavo_tot * FEE_PERCENTUALE
-            netto_uscita = ricavo_tot - fee_uscita
-            profitto_dollari = netto_uscita - spesa_tot
-            
-            portafoglio["saldo_usd"] += netto_uscita
-            portafoglio["lotti"] = []
+        lotto = sorted(lotti, key=lambda x: x['prezzo_entrata'], reverse=True)[0]
+        ricavo_lordo = lotto['quantita'] * prezzo
+        fee_v = ricavo_lordo * FEE_PERCENTUALE
+        netto_sim = ricavo_lordo - fee_v
+        profitto_dollari = netto_sim - lotto['spesa']
+        profitto_p = (profitto_dollari / lotto['spesa']) * 100
+
+        soglia_tp = 2.0 if regime == "TREND (Aggressivo)" else 1.1
+        if (profitto_p >= soglia_tp) or (rsi > 74 and profitto_dollari > 0):
+            portafoglio["saldo_usd"] += netto_sim
+            portafoglio["lotti"] = [l for l in lotti if l['id'] != lotto['id']]
             portafoglio["ultima_operazione_time"] = ts
-            portafoglio["max_pnl_raggiunto"] = 0.0
             portafoglio.setdefault("storico_operazioni", []).append(profitto_dollari)
             
             messaggio = (
-                f"🚀 *TRAILING TAKE PROFIT RAGGIUNTO* 🚀\n\n"
-                f"Il bot ha bloccato i guadagni dopo aver toccato un picco del {max_pnl_raggiunto:+.2f}%.\n"
-                f"Chiuso tutto al {pnl_perc:+.2f}% con un profitto netto di ${profitto_dollari:+,.2f}.\n"
-                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}\n"
-                f"Ottimo tempismo per proteggere i profitti."
+                f"🚀 *TAKE PROFIT ({regime})* 🚀\n\n"
+                f"Chiuso il lotto #{lotto['id']} in positivo. "
+                f"Profitto: ${profitto_dollari:+,.2f} netti ({profitto_p:+.2f}%).\n"
+                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
             ExecutionEngine.salva_portafoglio(portafoglio)
+            ExecutionEngine.invia_a_google_sheets("TAKE_PROFIT", prezzo, lotto['quantita'], profitto_dollari, portafoglio["saldo_usd"])
+            ExecutionEngine.invia_telegram(messaggio)
 
-    # 2. STOP LOSS / TRAILING STOP DINAMICO (Basato su ATR)
+    # 2. STOP LOSS
     if not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
         sl_perc = -2.2 if regime == "TREND (Aggressivo)" else -2.8
         if pnl_perc >= 3.5: sl_perc = 1.5
@@ -337,18 +360,17 @@ def esegui_bot_pro():
             portafoglio["saldo_usd"] += netto_uscita
             portafoglio["lotti"] = []
             portafoglio["ultima_operazione_time"] = ts
-            portafoglio["max_pnl_raggiunto"] = 0.0
             portafoglio.setdefault("storico_operazioni", []).append(profitto_op)
             
             messaggio = (
                 f"🚨 *CHIUSURA DIFENSIVA (STOP LOSS)* 🚨\n\n"
-                f"Brutta mossa del mercato, ho dovuto tagliare per parare il colpo. "
                 f"Chiuso tutto con ${profitto_op:+,.2f}.\n"
-                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}\n"
-                f"Meglio preservare la ciccia che farsi male."
+                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
             ExecutionEngine.salva_portafoglio(portafoglio)
+            ExecutionEngine.invia_a_google_sheets("STOP_LOSS", prezzo, q_tot, profitto_op, portafoglio["saldo_usd"])
+            ExecutionEngine.invia_telegram(messaggio)
 
     # 3. INGRESSI DINAMICI
     if puoi_operare and not azione_eseguita:
@@ -361,60 +383,64 @@ def esegui_bot_pro():
 
         if lotti_attivi < MAX_LOTTI and cond_ingr:
             costo_netto = capitale_lotto
-            costo_tot = costo_netto + (costo_netto * FEE_PERCENTUALE)
+            costo_tot = cost_netto + (costo_netto * FEE_PERCENTUALE)
             
             if saldo >= costo_tot:
                 quantita = capitale_lotto / prezzo
                 portafoglio["saldo_usd"] = saldo - costo_tot
-                nuovo_id = (lotti[-1]['id'] + 1) if lotti_attivi > 0 else 1
-                portafoglio["lotti"].append({"id": nuovo_id, "prezzo_entrata": prezzo, "quantita": quantita, "spesa": costo_tot})
-                portafoglio["ultima_operazione_time"] = ts
-                portafoglio["max_pnl_raggiunto"] = 0.0
+                nuovo_id = len(portafoglio["lotti"]) + 1
                 
-                # Ricalcoliamo i valori per il messaggio di acquisto con la percentuale
-                q_tot_agg = sum(l['quantita'] for l in portafoglio["lotti"])
-                spesa_tot_agg = sum(l['spesa'] for l in portafoglio["lotti"])
-                prezzo_medio_agg = spesa_tot_agg / q_tot_agg
-                pnl_iniziale_perc = ((prezzo - prezzo_medio_agg) / prezzo_medio_agg) * 100
-
+                portafoglio["lotti"].append({
+                    "id": nuovo_id, 
+                    "prezzo_entrata": prezzo, 
+                    "quantita": quantita, 
+                    "spesa": costo_tot
+                })
+                portafoglio["ultima_operazione_time"] = ts
+                
                 messaggio = (
                     f"🟢 *APERTURA LOTTO SMART (#{nuovo_id}/{MAX_LOTTI} - {regime})* 🟢\n\n"
-                    f"Ci siamo, ho appena aperto il lotto #{nuovo_id}/{MAX_LOTTI} ({regime}).\n"
                     f"• Prezzo d'ingresso: ${prezzo:,.2f}\n"
-                    f"• Rendimento attuale lotto: {pnl_iniziale_perc:+.2f}%\n"
-                    f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}\n"
-                    f"Vediamo come evolve."
+                    f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
                 ExecutionEngine.salva_portafoglio(portafoglio)
+                ExecutionEngine.invia_a_google_sheets("ACQUISTO", prezzo, quantita, -costo_tot, portafoglio["saldo_usd"])
+                ExecutionEngine.invia_telegram(messaggio)
 
-    # REPORT PERIODICO (con inclusione del rendimento e del picco massimo)
-    puoi_report = (ts - portafoglio.get("ultimo_report_time", 0)) >= 300
-    if not azione_eseguita and puoi_report:
-        strat_desc = "Aggressiva (Trend-Following + Lotti Dinamici)" if regime == "TREND (Aggressivo)" else "Difensiva (Range Trading + Profitto Rapido)"
-        prev = "Forte spinta rialzista in corso." if regime == "TREND (Aggressivo)" else "Fase di attesa e protezione capitale."
+    # REPORT PERIODICO (BLINDATO CON TIMER RIGOROSO)
+    ultimo_rep = portafoglio.get("ultimo_report_time", 0.0)
+    if ultimo_rep is None:
+        ultimo_rep = 0.0
         
-        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}% (Picco: {max_pnl_raggiunto:+.2f}%)\n" if lotti_attivi > 0 else "• Nessun lotto attivo al momento.\n"
+    tempo_trascorso = ts - ultimo_rep
+    puoi_report = tempo_trascorso >= 300
+
+    if not azione_eseguita and puoi_report:
+        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo.\n"
 
         messaggio = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
-            f"Aggiornamento rapido:\n"
-            f"• Bitcoin viaggia a ${prezzo:,.2f}\n"
+            f"• Bitcoin: ${prezzo:,.2f}\n"
             f"• Situazione: {regime}\n"
-            f"• RSI a {rsi:.1f} e ATR a ${atr:.2f}\n\n"
-            f"{dett_pos}\n"
-            f"🛠 *Strategia:*\n{strat_desc}\n\n"
-            f"🔮 *Idea:*\n{prev}"
+            f"• RSI: {rsi:.1f} | ATR: ${atr:.2f}\n\n"
+            f"{dett_pos}"
         )
         portafoglio["ultimo_report_time"] = ts
         ExecutionEngine.salva_portafoglio(portafoglio)
-
-    chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
-    if azione_eseguita or puoi_report:
+        
+        chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
         ExecutionEngine.invia_telegram(messaggio, chart)
 
 if __name__ == "__main__":
-    try:
-        esegui_bot_pro()
-    except Exception as e:
-        print(f"Errore critico: {e}")
+    print("Avvio del server web per Render...")
+    server_thread = threading.Thread(target=avvia_server_web, daemon=True)
+    server_thread.start()
+
+    print("Bot avviato in modalità cloud 24/7...")
+    while True:
+        try:
+            esegui_ciclo()
+        except Exception as e:
+            print(f"Errore nel ciclo: {e}")
+        time.sleep(300)
