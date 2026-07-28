@@ -357,22 +357,31 @@ def esegui_bot_pro():
                 portafoglio["lotti"].append({"id": nuovo_id, "prezzo_entrata": prezzo, "quantita": quantita, "spesa": costo_tot})
                 portafoglio["ultima_operazione_time"] = ts
                 
+                # Ricalcoliamo subito i valori aggiornati per il messaggio di acquisto con la percentuale
+                q_tot_agg = sum(l['quantita'] for l in portafoglio["lotti"])
+                spesa_tot_agg = sum(l['spesa'] for l in portafoglio["lotti"])
+                prezzo_medio_agg = spesa_tot_agg / q_tot_agg
+                pnl_iniziale_perc = ((prezzo - prezzo_medio_agg) / prezzo_medio_agg) * 100
+
                 messaggio = (
                     f"🟢 *APERTURA LOTTO SMART (#{nuovo_id}/{MAX_LOTTI} - {regime})* 🟢\n\n"
-                    f"Ci siamo, ho appena aperto il lotto #{nuovo_id}/{MAX_LOTTI} ({regime}). "
-                    f"Prezzo d'ingresso fissato a ${prezzo:,.2f}.\n"
+                    f"Ci siamo, ho appena aperto il lotto #{nuovo_id}/{MAX_LOTTI} ({regime}).\n"
+                    f"• Prezzo d'ingresso: ${prezzo:,.2f}\n"
+                    f"• Rendimento attuale lotto: {pnl_iniziale_perc:+.2f}%\n"
                     f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}\n"
                     f"Vediamo come evolve."
                 )
                 azione_eseguita = True
                 ExecutionEngine.salva_portafoglio(portafoglio)
 
-    # REPORT PERIODICO
+    # REPORT PERIODICO (con inclusione della percentuale di rendimento/P&L)
     puoi_report = (ts - portafoglio.get("ultimo_report_time", 0)) >= 300
     if not azione_eseguita and puoi_report:
         strat_desc = "Aggressiva (Trend-Following + Lotti Dinamici)" if regime == "TREND (Aggressivo)" else "Difensiva (Range Trading + Profitto Rapido)"
         prev = "Forte spinta rialzista in corso." if regime == "TREND (Aggressivo)" else "Fase di attesa e protezione capitale."
-        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Performance: {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else ""
+        
+        # Inseriamo la percentuale di rendimento (pnl_perc) nel report se ci sono lotti attivi
+        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo al momento.\n"
 
         messaggio = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
@@ -380,7 +389,7 @@ def esegui_bot_pro():
             f"• Bitcoin viaggia a ${prezzo:,.2f}\n"
             f"• Situazione: {regime}\n"
             f"• RSI a {rsi:.1f} e ATR a ${atr:.2f}\n\n"
-            f"{dett_pos}"
+            f"{dett_pos}\n"
             f"🛠 *Strategia:*\n{strat_desc}\n\n"
             f"🔮 *Idea:*\n{prev}"
         )
