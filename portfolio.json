@@ -20,39 +20,16 @@
     "ultimo_invio_timestamp": 1784980208,
     "ultima_transazione_timestamp": 1784980208,
     "prezzo_acquisto": 0.0,
-    "saldo_usd": 904.0764257073606,
-    "lotti": [
-        {
-            "id": 2,
-            "prezzo_entrata": 65188.09,
-            "quantita": 0.03259797917073502,
-            "spesa": 2127.125
-        },
-        {
-            "id": 3,
-            "prezzo_entrata": 65317.63,
-            "quantita": 0.04210195624060457,
-            "spesa": 2752.75
-        },
-        {
-            "id": 4,
-            "prezzo_entrata": 65257.4,
-            "quantita": 0.03256335679938214,
-            "spesa": 2127.125
-        },
-        {
-            "id": 5,
-            "prezzo_entrata": 65170.87,
-            "quantita": 0.0326065924852622,
-            "spesa": 2127.125
-        }
-    ],
+    "saldo_usd": 9715.519627414436,
+    "lotti": [],
     "ultima_attesa": null,
-    "ultima_operazione_time": 1785160867.307764,
+    "ultima_operazione_time": 1785206740.465515,
     "ultimo_report_time": 1785206154.700902,
     "valore_iniziale_giornata": 9818.013550058202,
     "data_ultima_registrazione": "2026-07-28",
     "blocco_drawdown_fino": 0.0,
     "bot_in_pausa": false,
-    "storico_operazioni": []
+    "storico_operazioni": [
+        -322.6817982929242
+    ]
 }
