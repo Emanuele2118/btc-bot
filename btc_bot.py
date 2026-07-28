@@ -20,8 +20,8 @@ PORTFOLIO_FILE = "portfolio.json"
 PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
-CAPITALE_PER_LOTTO = 2500.0   
-MAX_LOTTI = 4                 
+CAPITALE_PER_LOTTO = 600.0   # Ridotto per consentire più lotti attivi
+MAX_LOTTI = 15                # Aumentato a 15 lotti massimi
 FEE_PERCENTUALE = 0.001       
 MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
