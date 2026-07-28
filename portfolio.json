@@ -49,12 +49,10 @@
     ],
     "ultima_attesa": null,
     "ultima_operazione_time": 1785160867.307764,
-    "ultimo_report_time": 1785196537.241532,
-    "valore_iniziale_giornata": 10033.089851575556,
-    "data_ultima_registrazione": "2026-07-27",
+    "ultimo_report_time": 1785196868.350512,
+    "valore_iniziale_giornata": 9818.013550058202,
+    "data_ultima_registrazione": "2026-07-28",
     "blocco_drawdown_fino": 0.0,
     "bot_in_pausa": false,
-    "storico_operazioni": [
-        5.111574131804446
-    ]
+    "storico_operazioni": []
 }
