@@ -5,7 +5,7 @@ import requests
 # Impostazioni pagina
 st.set_page_config(page_title="MetaTrader Bot History", page_icon="📈", layout="centered")
 
-# CSS personalizzato per correggere i colori del testo in modalità chiara (bianca)
+# CSS personalizzato per lo stile pulito
 st.markdown("""
     <style>
     .main {
@@ -54,7 +54,7 @@ st.markdown("""
 # URL Raw del file portfolio.json su GitHub
 GITHUB_JSON_URL = "https://raw.githubusercontent.com/Emanuele2118/btc-bot/main/portfolio.json"
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=10)
 def load_portfolio_data():
     try:
         response = requests.get(GITHUB_JSON_URL)
@@ -73,17 +73,18 @@ with tab1:
     if not data:
         st.warning("⚠️ Impossibile connettersi a portfolio.json su GitHub.")
     else:
+        # Estraiamo i lotti reali dal JSON (la chiave corretta usata dal bot)
+        lotti = data.get("lotti", [])
         saldo_usd = data.get("saldo_usd", 0.0)
-        lotti = data.get("Lotti", [])
         
-        st.markdown("<h3 style='color: #000000; font-size: 18px;'>Posizioni Attive (Lotti)</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color: #000000; font-size: 18px;'>Posizioni Attive ({len(lotti)}/4)</h3>", unsafe_allow_html=True)
         
         if not lotti:
             st.info("Nessun lotto attivo al momento.")
         else:
             for l in lotti:
                 l_id = l.get("id", "-")
-                prezzo = l.get("prezzo_entrata", l.get("prezzo", 0.0))
+                prezzo = l.get("prezzo_entrata", 0.0)
                 quantita = l.get("quantita", 0.0)
                 spesa = l.get("spesa", 0.0)
                 
@@ -94,20 +95,19 @@ with tab1:
                             <div style="color: #007aff;">ID: {l_id}</div>
                         </div>
                         <div style="display: flex; justify-content: space-between;" class="trade-details">
-                            <div>Prezzo Entrata: <b>{prezzo}</b></div>
+                            <div>Prezzo Entrata: <b>{prezzo:,.2f}</b></div>
                             <div>Spesa: <b>${spesa:,.2f}</b></div>
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
         deposit = data.get("valore_iniziale_giornata", 3000.0)
-        balance = saldo_usd
 
         st.markdown(f"""
             <div class="summary-box">
                 <div class="summary-row"><span>Valore Iniziale</span><span>{deposit:,.2f}</span></div>
                 <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
-                    <span style="color: #000000;">Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{balance:,.2f}</span>
+                    <span style="color: #000000;">Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{saldo_usd:,.2f}</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
