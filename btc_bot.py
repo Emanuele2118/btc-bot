@@ -300,7 +300,8 @@ def esegui_bot_pro():
                 f"🚀 *TAKE PROFIT ({regime})* 🚀\n\n"
                 f"Boom! Chiuso il lotto #{lotto['id']} in positivo. "
                 f"Ci portiamo a casa ${profitto_dollari:+,.2f} netti ({profitto_p:+.2f}%).\n"
-                f"Saldo aggiornato a ${portafoglio['saldo_usd']:,.2f}, si continua così."
+                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}\n"
+                f"Si continua così."
             )
             azione_eseguita = True
             ExecutionEngine.salva_portafoglio(portafoglio)
@@ -329,7 +330,9 @@ def esegui_bot_pro():
             messaggio = (
                 f"🚨 *CHIUSURA DIFENSIVA (STOP LOSS)* 🚨\n\n"
                 f"Brutta mossa del mercato, ho dovuto tagliare per parare il colpo. "
-                f"Chiuso tutto con ${profitto_op:+,.2f}. Meglio preservare la ciccia che farsi male."
+                f"Chiuso tutto con ${profitto_op:+,.2f}.\n"
+                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}\n"
+                f"Meglio preservare la ciccia che farsi male."
             )
             azione_eseguita = True
             ExecutionEngine.salva_portafoglio(portafoglio)
@@ -357,7 +360,9 @@ def esegui_bot_pro():
                 messaggio = (
                     f"🟢 *APERTURA LOTTO SMART (#{nuovo_id}/{MAX_LOTTI} - {regime})* 🟢\n\n"
                     f"Ci siamo, ho appena aperto il lotto #{nuovo_id}/{MAX_LOTTI} ({regime}). "
-                    f"Prezzo d'ingresso fissato a ${prezzo:,.2f}. Vediamo come evolve."
+                    f"Prezzo d'ingresso fissato a ${prezzo:,.2f}.\n"
+                    f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}\n"
+                    f"Vediamo come evolve."
                 )
                 azione_eseguita = True
                 ExecutionEngine.salva_portafoglio(portafoglio)
