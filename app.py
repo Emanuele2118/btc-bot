@@ -3,9 +3,9 @@ import pandas as pd
 import requests
 
 # Impostazioni pagina
-st.set_page_config(page_title="MetaTrader Bot History", page_icon="📈", layout="centered")
+st.set_page_config(page_title="MetaTrader Bot - Posizioni", page_icon="📈", layout="centered")
 
-# CSS personalizzato per lo stile MetaTrader
+# CSS personalizzato per lo stile pulito e chiaro
 st.markdown("""
     <style>
     .main {
@@ -62,11 +62,12 @@ def load_data():
         portfolio = None
         
     # Prendi il prezzo attuale di BTC in tempo reale
-    btc_current_price = 63000.0 # Valore di fallback
+    btc_current_price = 63000.0
     try:
         price_res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=3)
         if price_res.status_code == 200:
-            btc_current_price = float(price_res.json()["msg"]) if "msg" in price_res.json() else float(price_res.json().get("price", 63000.0))
+            data_price = price_res.json()
+            btc_current_price = float(data_price.get("price", 63000.0))
     except:
         pass
         
@@ -74,79 +75,56 @@ def load_data():
 
 data, current_btc_price = load_data()
 
-tab1, tab2, tab3 = st.tabs(["Positions", "Orders", "Deals"])
+# Titolo principale e schermata unica
+st.markdown("<h3 style='color: #000000; font-size: 20px; margin-bottom: 20px;'>Posizioni Attive</h3>", unsafe_allow_html=True)
 
-with tab1:
-    if not data:
-        st.warning("⚠️ Impossibile connettersi a portfolio.json su GitHub.")
+if not data:
+    st.warning("⚠️ Impossibile connettersi a portfolio.json su GitHub.")
+else:
+    lotti = data.get("lotti", [])
+    saldo_usd = data.get("saldo_usd", 0.0)
+    
+    if not lotti:
+        st.info("Nessun lotto attivo al momento.")
     else:
-        lotti = data.get("lotti", [])
-        saldo_usd = data.get("saldo_usd", 0.0)
+        total_profit = 0.0
         
-        st.markdown(f"<h3 style='color: #000000; font-size: 18px;'>Posizioni Attive ({len(lotti)}/4)</h3>", unsafe_allow_html=True)
-        
-        if not lotti:
-            st.info("Nessun lotto attivo al momento.")
-        else:
-            total_profit = 0.0
+        for l in lotti:
+            l_id = l.get("id", "-")
+            prezzo_entrata = l.get("prezzo_entrata", 0.0)
+            quantita = l.get("quantita", 0.0)
+            spesa = l.get("spesa", 0.0)
             
-            for l in lotti:
-                l_id = l.get("id", "-")
-                prezzo_entrata = l.get("prezzo_entrata", 0.0)
-                quantita = l.get("quantita", 0.0)
-                spesa = l.get("spesa", 0.0)
-                
-                # Calcolo profitto/perdita stimato per singolo lotto (long/buy)
-                # PnL = (Prezzo Attuale - Prezzo Entrata) * Quantità
-                profit_lotto = (current_btc_price - prezzo_entrata) * quantita
-                total_profit += profit_lotto
-                
-                color_profit = "#34c759" if profit_lotto >= 0 else "#ff3b30"
-                sign = "+" if profit_lotto >= 0 else ""
-                
-                st.markdown(f"""
-                    <div class="trade-card">
-                        <div style="display: flex; justify-content: space-between;" class="trade-title">
-                            <div>BTCUSD, <span style="color: #34c759;">BUY</span> <span style="color: #333333;">{quantita:.4f}</span></div>
-                            <div style="color: {color_profit}; font-weight: bold;">{sign}${profit_lotto:,.2f}</div>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;" class="trade-details">
-                            <div>Entrata: <b>{prezzo_entrata:,.2f}</b> | Attuale: <b>{current_btc_price:,.2f}</b></div>
-                            <div>ID: {l_id}</div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            deposit = data.get("valore_iniziale_giornata", 3000.0)
-            total_color = "#34c759" if total_profit >= 0 else "#ff3b30"
-            total_sign = "+" if total_profit >= 0 else ""
-
+            # Calcolo profitto/perdita stimato per singolo lotto (long/buy)
+            profit_lotto = (current_btc_price - prezzo_entrata) * quantita
+            total_profit += profit_lotto
+            
+            color_profit = "#34c759" if profit_lotto >= 0 else "#ff3b30"
+            sign = "+" if profit_lotto >= 0 else ""
+            
             st.markdown(f"""
-                <div class="summary-box">
-                    <div class="summary-row"><span>Valore Iniziale</span><span>{deposit:,.2f}</span></div>
-                    <div class="summary-row"><span>Profitto Operazioni (P&L)</span><span style="color: {total_color}; font-weight: bold;">{total_sign}${total_profit:,.2f}</span></div>
-                    <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
-                        <span style="color: #000000;">Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{saldo_usd:,.2f}</span>
+                <div class="trade-card">
+                    <div style="display: flex; justify-content: space-between;" class="trade-title">
+                        <div>BTCUSD, <span style="color: #34c759;">BUY</span> <span style="color: #333333;">{quantita:.4f}</span></div>
+                        <div style="color: {color_profit}; font-weight: bold;">{sign}${profit_lotto:,.2f}</div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;" class="trade-details">
+                        <div>Entrata: <b>{prezzo_entrata:,.2f}</b> | Attuale: <b>{current_btc_price:,.2f}</b></div>
+                        <div>ID: {l_id}</div>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-with tab2:
-    st.info("Nessun ordine pendente.")
+        deposit = data.get("valore_iniziale_giornata", 3000.0)
+        total_color = "#34c759" if total_profit >= 0 else "#ff3b30"
+        total_sign = "+" if total_profit >= 0 else ""
 
-with tab3:
-    st.info("Storico operazioni sincronizzato dal bot.")
-
-# Barra di navigazione inferiore
-st.markdown("<br><br>", unsafe_allow_html=True)
-nav1, nav2, nav3, nav4, nav5 = st.columns(5)
-with nav1:
-    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>📊<br>Quotes</div>", unsafe_allow_html=True)
-with nav2:
-    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>📈<br>Chart</div>", unsafe_allow_html=True)
-with nav3:
-    st.markdown("<div style='text-align: center; color: #007aff; font-size: 11px;'>💱<br>Trade</div>", unsafe_allow_html=True)
-with nav4:
-    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>🕒<br>History</div>", unsafe_allow_html=True)
-with nav5:
-    st.markdown("<div style='text-align: center; color: #666; font-size: 11px;'>⚙️<br>Settings</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class="summary-box">
+                <div class="summary-row"><span>Valore Iniziale</span><span>{deposit:,.2f}</span></div>
+                <div class="summary-row"><span>Profitto Operazioni (P&L)</span><span style="color: {total_color}; font-weight: bold;">{total_sign}${total_profit:,.2f}</span></div>
+                <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px;">
+                    <span style="color: #000000;">Saldo USD (Balance)</span><span style="color: #007aff; font-size: 16px;">{saldo_usd:,.2f}</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
