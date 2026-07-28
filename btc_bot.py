@@ -14,21 +14,19 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GOOGLE_SHEET_URL = os.environ.get("GOOGLE_SHEET_URL")
 
-# Allineato con il file presente su GitHub
 PORTFOLIO_FILE = "portfolio.json"
 PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 2500.0   
 MAX_LOTTI = 4                 
-FEE_PERCENTUALE = 0.001       # 0.10% commissione Taker
-MAX_DAILY_DRAWDOWN_PCT = 4.0  # Blocco di emergenza giornaliero più rigido
+FEE_PERCENTUALE = 0.001       
+MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
-# ==================== 1. DATA ENGINE (Motore Dati) ====================
+# ==================== 1. DATA ENGINE ====================
 class DataEngine:
     @staticmethod
     def ottieni_dati():
-        # Tentativo primario su Coinbase
         url = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60"
         headers = {"User-Agent": "Mozilla/5.0"}
         try:
@@ -51,7 +49,6 @@ class DataEngine:
         except Exception as e:
             print(f"Errore connessione Coinbase: {e}")
 
-        # Fallback su Binance
         try:
             url_binance = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=250"
             response = requests.get(url_binance, timeout=10)
@@ -73,7 +70,7 @@ class DataEngine:
 
         return None
 
-# ==================== 2. RISK MANAGEMENT ENGINE (Il Custode) ====================
+# ==================== 2. RISK MANAGEMENT ENGINE ====================
 class RiskManagementEngine:
     @staticmethod
     def calcola_atr(df, periodo=14):
@@ -93,14 +90,13 @@ class RiskManagementEngine:
             return True
         return timestamp_attuale < portafoglio.get("blocco_drawdown_fino", 0.0)
 
-# ==================== 3. STRATEGY ENGINE (Il Cervello) ====================
+# ==================== 3. STRATEGY ENGINE ====================
 class StrategyEngine:
     @staticmethod
     def analizza_mercato(df):
         df['ema_veloce'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['ema_lenta'] = df['Close'].ewm(span=50, adjust=False).mean()
         
-        # RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -120,7 +116,6 @@ class StrategyEngine:
         volume_medio = df['volume_ma'].iloc[-1] if not np.isnan(df['volume_ma'].iloc[-1]) else volume_attuale
         obv_crescente = df['obv'].iloc[-1] > df['obv'].iloc[-5]
 
-        # Rilevamento Regime
         regime = "RANGE (Difensivo)"
         if abs(ema_v - ema_l) > (atr_attuale * 0.4) and ema_v > ema_l and obv_crescente:
             regime = "TREND (Aggressivo)"
@@ -228,7 +223,7 @@ class ExecutionEngine:
             return None
 
 # ==================== MAIN PIPELINE ====================
-def esegui_bot_pro():
+def esegui_ciclo():
     portafoglio = ExecutionEngine.carica_portafoglio()
     df = DataEngine.ottieni_dati()
     if df is None or len(df) < 100: return
@@ -241,7 +236,6 @@ def esegui_bot_pro():
     ts = now_utc.timestamp()
     oggi_str = now_utc.strftime("%Y-%m-%d")
 
-    # Resoconto Giornaliero
     if portafoglio.get("data_ultima_registrazione", oggi_str) != oggi_str:
         val_portafoglio = portafoglio["saldo_usd"] + sum(l['quantita'] * prezzo for l in lotti)
         val_ieri = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
@@ -254,9 +248,9 @@ def esegui_bot_pro():
 
         msg_giorno = (
             f"📅 *RESOCONTO GIORNALIERO SMART* 📅\n\n"
-            f"Oh, facciamo un punto della situazione oggi: portafoglio totale a ${val_portafoglio:,.2f}, "
+            f"Portafoglio totale a ${val_portafoglio:,.2f}, "
             f"siamo a ${diff:+,.2f} ({diff_p:+.2f}%).\n"
-            f"Win rate del {win_rate:.1f}%. Insomma, ci siamo."
+            f"Win rate del {win_rate:.1f}%."
         )
         ExecutionEngine.invia_telegram(msg_giorno)
         portafoglio["valore_iniziale_giornata"] = val_portafoglio
@@ -279,7 +273,7 @@ def esegui_bot_pro():
     azione_eseguita = False
     messaggio = ""
     stato_dash = f"Pos ({lotti_attivi}/{MAX_LOTTI}) | P&L: {pnl_perc:+.2f}% | Regime: {regime}"
-    puoi_operare = (ts - portafoglio.get("ultima_operazione_time", 0)) >= 900  # Cooldown a 15 min
+    puoi_operare = (ts - portafoglio.get("ultima_operazione_time", 0)) >= 900  
 
     # 1. TAKE PROFIT
     if puoi_operare and not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
@@ -299,15 +293,14 @@ def esegui_bot_pro():
             
             messaggio = (
                 f"🚀 *TAKE PROFIT ({regime})* 🚀\n\n"
-                f"Boom! Chiuso il lotto #{lotto['id']} in positivo. "
-                f"Ci portiamo a casa ${profitto_dollari:+,.2f} netti ({profitto_p:+.2f}%).\n"
-                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}\n"
-                f"Si continua così."
+                f"Chiuso il lotto #{lotto['id']} in positivo. "
+                f"Profitto: ${profitto_dollari:+,.2f} netti ({profitto_p:+.2f}%).\n"
+                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
             ExecutionEngine.salva_portafoglio(portafoglio)
 
-    # 2. STOP LOSS / TRAILING STOP DINAMICO (Basato su ATR)
+    # 2. STOP LOSS
     if not azione_eseguita and lotti_attivi > 0 and prezzo_medio > 0:
         sl_perc = -2.2 if regime == "TREND (Aggressivo)" else -2.8
         if pnl_perc >= 3.5: sl_perc = 1.5
@@ -330,10 +323,8 @@ def esegui_bot_pro():
             
             messaggio = (
                 f"🚨 *CHIUSURA DIFENSIVA (STOP LOSS)* 🚨\n\n"
-                f"Brutta mossa del mercato, ho dovuto tagliare per parare il colpo. "
                 f"Chiuso tutto con ${profitto_op:+,.2f}.\n"
-                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}\n"
-                f"Meglio preservare la ciccia che farsi male."
+                f"💰 *Saldo attuale:* ${portafoglio['saldo_usd']:,.2f}"
             )
             azione_eseguita = True
             ExecutionEngine.salva_portafoglio(portafoglio)
@@ -354,8 +345,6 @@ def esegui_bot_pro():
             if saldo >= costo_tot:
                 quantita = capitale_lotto / prezzo
                 portafoglio["saldo_usd"] = saldo - costo_tot
-                
-                # ID progressivo basato sulla dimensione reale attuale della lista
                 nuovo_id = len(portafoglio["lotti"]) + 1
                 
                 portafoglio["lotti"].append({
@@ -368,31 +357,23 @@ def esegui_bot_pro():
                 
                 messaggio = (
                     f"🟢 *APERTURA LOTTO SMART (#{nuovo_id}/{MAX_LOTTI} - {regime})* 🟢\n\n"
-                    f"Ci siamo, ho appena aperto il lotto #{nuovo_id}/{MAX_LOTTI} ({regime}).\n"
                     f"• Prezzo d'ingresso: ${prezzo:,.2f}\n"
-                    f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}\n"
-                    f"Vediamo come evolve."
+                    f"💰 *Saldo residuo:* ${portafoglio['saldo_usd']:,.2f}"
                 )
                 azione_eseguita = True
                 ExecutionEngine.salva_portafoglio(portafoglio)
 
-    # REPORT PERIODICO (Con inclusione della percentuale di rendimento/P&L)
+    # REPORT PERIODICO
     puoi_report = (ts - portafoglio.get("ultimo_report_time", 0)) >= 300
     if not azione_eseguita and puoi_report:
-        strat_desc = "Aggressiva (Trend-Following + Lotti Dinamici)" if regime == "TREND (Aggressivo)" else "Difensiva (Range Trading + Profitto Rapido)"
-        prev = "Forte spinta rialzista in corso." if regime == "TREND (Aggressivo)" else "Fase di attesa e protezione capitale."
-        
-        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento attuale (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo al momento.\n"
+        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo.\n"
 
         messaggio = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
-            f"Aggiornamento rapido:\n"
-            f"• Bitcoin viaggia a ${prezzo:,.2f}\n"
+            f"• Bitcoin: ${prezzo:,.2f}\n"
             f"• Situazione: {regime}\n"
-            f"• RSI a {rsi:.1f} e ATR a ${atr:.2f}\n\n"
-            f"{dett_pos}\n"
-            f"🛠 *Strategia:*\n{strat_desc}\n\n"
-            f"🔮 *Idea:*\n{prev}"
+            f"• RSI: {rsi:.1f} | ATR: ${atr:.2f}\n\n"
+            f"{dett_pos}"
         )
         portafoglio["ultimo_report_time"] = ts
         ExecutionEngine.salva_portafoglio(portafoglio)
@@ -402,7 +383,11 @@ def esegui_bot_pro():
         ExecutionEngine.invia_telegram(messaggio, chart)
 
 if __name__ == "__main__":
-    try:
-        esegui_bot_pro()
-    except Exception as e:
-        print(f"Errore critico: {e}")
+    print("Bot avviato in modalità cloud 24/7...")
+    while True:
+        try:
+            esegui_ciclo()
+        except Exception as e:
+            print(f"Errore nel ciclo: {e}")
+        # Pausa precisa di 300 secondi (5 minuti) prima del prossimo controllo
+        time.sleep(300)
