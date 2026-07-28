@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -210,7 +212,7 @@ class ExecutionEngine:
             ax2 = fig.add_subplot(gs[1])
             ax2.set_facecolor('#f4f4f4')
             ax2.axis('off')
-            info_testo = f" 📊  PRO ENGINE DASHBOARD\n • Prezzo: ${prezzo:,.2f}    |    • RSI: {rsi:.1f}    |    • Regime: {regime}\n • Stato: {stato}"
+            info_testo = f" PRO ENGINE DASHBOARD\n • Prezzo: ${prezzo:,.2f}    |    • RSI: {rsi:.1f}    |    • Regime: {regime}\n • Stato: {stato}"
             ax2.text(0.02, 0.5, info_testo, color='black', fontsize=10, family='monospace', verticalalignment='center', bbox=dict(boxstyle='square,pad=0.8', fc='#e8e8e8', ec='#cccccc'))
 
             plt.tight_layout()
@@ -221,6 +223,18 @@ class ExecutionEngine:
         except Exception as e:
             print(f"Errore grafico: {e}")
             return None
+
+# ==================== WEB SERVER PER RENDER (WEB SERVICE) ====================
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is active and running 24/7!")
+
+def avvia_server_web():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
+    server.serve_forever()
 
 # ==================== MAIN PIPELINE ====================
 def esegui_ciclo():
@@ -383,11 +397,14 @@ def esegui_ciclo():
         ExecutionEngine.invia_telegram(messaggio, chart)
 
 if __name__ == "__main__":
+    print("Avvio del server web per Render...")
+    server_thread = threading.Thread(target=avvia_server_web, daemon=True)
+    server_thread.start()
+
     print("Bot avviato in modalità cloud 24/7...")
     while True:
         try:
             esegui_ciclo()
         except Exception as e:
             print(f"Errore nel ciclo: {e}")
-        # Pausa precisa di 300 secondi (5 minuti) prima del prossimo controllo
         time.sleep(300)
