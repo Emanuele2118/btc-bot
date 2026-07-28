@@ -1,197 +1,103 @@
 import streamlit as st
-import json
-import os
 import pandas as pd
-import requests
 
-# Configurazione della pagina (stile terminale finanziario)
-st.set_page_config(
-    page_title="Trading - BTC/USD",
-    page_icon="📈",
-    layout="centered"
-)
+# Impostazioni pagina
+st.set_page_config(page_title="MetaTrader Light", page_icon="📈", layout="centered")
 
-# --- STILE CSS PERSONALIZZATO (TEMA METATRADER DARK) ---
+# CSS personalizzato per ricreare lo stile MetaTrader in modalità chiara (bianca)
 st.markdown("""
-<style>
-    /* Sfondo generale scuro stile MetaTrader */
+    <style>
+    .main {
+        background-color: #ffffff;
+        color: #000000;
+    }
     .stApp {
-        background-color: #121212;
-        color: #e0e0e0;
+        background-color: #ffffff;
     }
-    
-    /* Box delle metriche */
-    div[data-testid="stMetric"] {
-        background-color: #1e1e1e;
-        border: 1px solid #2d2d2d;
-        padding: 12px;
-        border-radius: 6px;
-    }
-    div[data-testid="stMetric"] label {
-        color: #9e9e9e !important;
-        font-size: 13px !important;
-    }
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #ffffff !important;
-        font-size: 20px !important;
-        font-weight: 600;
-    }
-
-    /* Tab personalizzate */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #121212;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #1e1e1e;
-        border-radius: 4px;
-        color: #b0b0b0;
-        padding: 8px 16px;
-        border: 1px solid #2d2d2d;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #2a2a2a !important;
-        color: #ffffff !important;
-        border-color: #00acc1 !important;
-    }
-
-    /* Titoli e separatori */
     h1, h2, h3 {
-        color: #ffffff !important;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        color: #000000;
     }
-    hr {
-        border-color: #2d2d2d;
+    .market-card {
+        border-bottom: 1px solid #e0e0e0;
+        padding: 10px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
-    
-    /* Pulsanti */
-    .stButton button {
-        background-color: #2196f3;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-weight: 600;
-        width: 100%;
+    .symbol {
+        font-weight: bold;
+        font-size: 16px;
+        color: #000000;
     }
-    .stButton button:hover {
-        background-color: #1976d2;
+    .spread {
+        font-size: 12px;
+        color: #666666;
     }
-</style>
+    .price-bid {
+        color: #0055ff;
+        font-weight: bold;
+        font-size: 16px;
+        text-align: right;
+    }
+    .price-ask {
+        color: #ff0000;
+        font-weight: bold;
+        font-size: 16px;
+        text-align: right;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
-PORTFOLIO_FILE = "portfolio.json"
-
-def carica_portafoglio():
-    if os.path.exists(PORTFOLIO_FILE):
-        try:
-            with open(PORTFOLIO_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            pass
-    return {
-        "saldo_usd": 10000.0,
-        "lotti": [],
-        "storico_operazioni": []
-    }
-
-# Funzione per recuperare il prezzo live di BTC al momento dell'apertura dell'app
-@st.cache_data(ttl=15)
-def ottieni_prezzo_live():
-    try:
-        url = "https://api.exchange.coinbase.com/products/BTC-USD/ticker"
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            return float(res.json().get('price', 0))
-    except:
-        pass
-    return 0.0
-
-# --- INTESTAZIONE STILE PIATTAFORMA ---
-col_head1, col_head2 = st.columns([3, 1])
-with col_head1:
-    st.markdown("### 📊 BTC/USD (Simulatore)")
-with col_head2:
-    prezzo_live = ottieni_prezzo_live()
-    if prezzo_live > 0:
-        st.markdown(f"<h3 style='text-align: right; color: #26a69a !important;'>${prezzo_live:,.2f}</h3>", unsafe_allow_html=True)
-
-portafoglio = carica_portafoglio()
-saldo = portafoglio.get("saldo_usd", 10000.0)
-lotti = portafoglio.get("lotti", [])
-storico = portafoglio.get("storico_operazioni", [])
-
-# Calcoli finanziari
-capitale_lotti = sum(l.get('spesa', 0) for l in lotti)
-valore_attuale_posizioni = sum(l['quantita'] * prezzo_live for l in lotti) if prezzo_live > 0 else capitale_lotti
-profitto_aperte = valore_attuale_posizioni - capitale_lotti if prezzo_live > 0 else 0.0
-equity_totale = saldo + valore_attuale_posizioni
-profitto_chiuso = sum(storico)
-
-# --- BILANCIO / CONTO (Stile Header Account MT) ---
-col1, col2, col3 = st.columns(3)
+# Intestazione con Tab Simple / Advanced
+col1, col2 = st.columns([3, 1])
 with col1:
-    st.metric(label="Saldo", value=f"${saldo:,.2f}")
+    tab_mode = st.radio("Modalità", ["Simple", "Advanced"], horizontal=True, label_visibility="collapsed")
 with col2:
-    st.metric(label="Equity", value=f"${equity_totale:,.2f}")
-with col3:
-    col_pnl_color = "#26a69a" if profitto_aperte >= 0 else "#ef5350"
-    st.metric(label="Profitto Aperto", value=f"${profitto_aperte:+,.2f}")
+    if st.button("➕", use_container_width=True):
+        st.toast("Aggiungi simbolo cliccato")
 
 st.divider()
 
-# --- SEZIONI A SCHEDE (Tab stile MetaTrader: Posizioni / Storico) ---
-tab_posizioni, tab_storico, tab_info = st.tabs(["📌 Posizioni Attive", "📜 Storico", "⚙️ Account"])
+# Dati di mercato simulati (ispirati allo screenshot di destra)
+data = [
+    {"time": "12:11:45", "symbol": "EURUSD", "spread": 21, "bid": "1.1554⁶", "ask": "1.1556⁷", "low": "1.15483", "high": "1.15750"},
+    {"time": "12:11:45", "symbol": "GBPUSD", "spread": 19, "bid": "1.3476⁰", "ask": "1.3477⁹", "low": "1.34493", "high": "1.34998"},
+    {"time": "12:11:45", "symbol": "USDJPY", "spread": 24, "bid": "113.44⁰", "ask": "113.46⁴", "low": "113.341", "high": "113.656"},
+    {"time": "12:11:43", "symbol": "USDCAD", "spread": 25, "bid": "1.2456⁶", "ask": "1.2459¹", "low": "1.24382", "high": "1.24643"},
+    {"time": "12:11:44", "symbol": "USDCHF", "spread": 21, "bid": "0.9149⁷", "ask": "0.9151⁸", "low": "0.91162", "high": "0.91498"},
+    {"time": "12:11:44", "symbol": "NZDUSD", "spread": 35, "bid": "0.7135³", "ask": "0.7138⁸", "low": "0.71022", "high": "0.71523"},
+    {"time": "12:11:42", "symbol": "AUDUSD", "spread": 20, "bid": "0.7394⁸", "ask": "0.7396⁸", "low": "0.73832", "high": "0.74119"},
+    {"time": "12:11:44", "symbol": "AUDNZD", "spread": 75, "bid": "1.0358⁸", "ask": "1.0366³", "low": "1.03555", "high": "1.04009"},
+    {"time": "12:11:35", "symbol": "AUDCAD", "spread": 60, "bid": "0.9210⁰", "ask": "0.9216⁰", "low": "0.92000", "high": "0.92225"},
+]
 
-with tab_posizioni:
-    st.markdown(f"**Lotti attivi:** {len(lotti)} / 4")
-    
-    if len(lotti) > 0:
-        for lotto in lotti:
-            p_entrata = lotto['prezzo_entrata']
-            qta = lotto['quantita']
-            valore_attuale_lotto = qta * prezzo_live if prezzo_live > 0 else lotto['spesa']
-            pnl_lotto = valore_attuale_lotto - lotto['spesa']
-            pnl_perc = (pnl_lotto / lotto['spesa']) * 100 if lotto['spesa'] > 0 else 0
-            
-            colore_pnl = "#26a69a" if pnl_lotto >= 0 else "#ef5350"
-            
-            st.markdown(f"""
-            <div style="background-color: #1e1e1e; padding: 12px; border-radius: 6px; border-left: 4px solid {colore_pnl}; margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; font-weight: bold;">
-                    <span>Lotto #{lotto['id']} (BTC)</span>
-                    <span style="color: {colore_pnl};">${pnl_lotto:+,.2f} ({pnl_perc:+.2f}%)</span>
-                </div>
-                <div style="font-size: 13px; color: #b0b0b0; margin-top: 6px;">
-                    <div>Quantità: <b>{qta:.4f} BTC</b></div>
-                    <div>Prezzo Apertura: <b>${p_entrata:,.2f}</b></div>
-                    <div>Valore Attuale: <b>${valore_attuale_lotto:,.2f}</b></div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Nessuna posizione aperta al momento.")
+# Rendering della lista in stile MetaTrader Light
+for row in data:
+    c1, c2, c3 = st.columns([2, 2, 2])
+    with c1:
+        st.markdown(f"<span style='font-size: 11px; color: #888;'>{row['time']}</span><br><b style='font-size: 15px; color: #000;'>{row['symbol']}</b><br><span style='font-size: 12px; color: #666;'>Spread: {row['spread']}</span>", unsafe_allow_html=True)
+    with c2:
+        if tab_mode == "Advanced":
+            st.markdown(f"<div style='text-align: right;'><span style='color: #0055ff; font-weight: bold; font-size: 16px;'>{row['bid']}</span><br><span style='font-size: 11px; color: #666;'>Low: {row['low']}</span></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div style='text-align: right;'><span style='color: #0055ff; font-weight: bold; font-size: 16px;'>{row['bid']}</span></div>", unsafe_allow_html=True)
+    with c3:
+        if tab_mode == "Advanced":
+            st.markdown(f"<div style='text-align: right;'><span style='color: #ff0000; font-weight: bold; font-size: 16px;'>{row['ask']}</span><br><span style='font-size: 11px; color: #666;'>High: {row['high']}</span></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div style='text-align: right;'><span style='color: #ff0000; font-weight: bold; font-size: 16px;'>{row['ask']}</span></div>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
-with tab_storico:
-    st.markdown(f"**Profitto Chiuso Totale:** <span style='color: {'#26a69a' if profitto_chiuso >= 0 else '#ef5350'};'>${profitto_chiuso:+,.2f}</span>", unsafe_allow_html=True)
-    st.markdown("---")
-    
-    if len(storico) > 0:
-        for idx, op in enumerate(reversed(storico[-15:])):
-            colore_op = "#26a69a" if op >= 0 else "#ef5350"
-            st.markdown(f"""
-            <div style="background-color: #1e1e1e; padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #b0b0b0; font-size: 13px;">Operazione #{len(storico) - idx}</span>
-                <span style="color: {colore_op}; font-weight: bold; font-size: 14px;">${op:+,.2f}</span>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.write("Nessuna operazione chiusa registrata.")
-
-with tab_info:
-    st.markdown("### Dettagli Simulator")
-    st.markdown(f"• **Capitale Iniziale:** $10,000.00")
-    st.markdown(f"• **Capitale per Lotto:** $2,500.00")
-    st.markdown(f"• **Lotti Massimi:** 4")
-    
-    if st.button("🔄 Aggiorna Dati"):
-        st.rerun()
+# Barra di navigazione inferiore simulata
+st.markdown("<br><br>", unsafe_allow_html=True)
+nav1, nav2, nav3, nav4, nav5 = st.columns(5)
+with nav1:
+    st.markdown("<div style='text-align: center; color: #0055ff; font-size: 11px;'>📊<br><b>Quotes</b></div>", unsafe_allow_html=True)
+with nav2:
+    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>📈<br>Chart</div>", unsafe_allow_html=True)
+with nav3:
+    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>💱<br>Trade</div>", unsafe_allow_html=True)
+with nav4:
+    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>🕒<br>History</div>", unsafe_allow_html=True)
+with nav5:
+    st.markdown("<div style='text-align: center; color: #888; font-size: 11px;'>⚙️<br>Settings</div>", unsafe_allow_html=True)
