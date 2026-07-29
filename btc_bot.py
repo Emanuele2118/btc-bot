@@ -21,7 +21,7 @@ PORTFOLIO_FILE = "portfolio.json"
 
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 600.0   
-MAX_LOTTI = 15                   
+MAX_LOTTI = 15                     
 FEE_PERCENTUALE = 0.001        
 MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
@@ -46,7 +46,11 @@ class DataEngine:
                         'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
                     }).dropna().reset_index()
                     df_15m['ema_macro_15m'] = df_15m['Close'].ewm(span=50, adjust=False).mean()
-                    df['ema_macro_15m'] = df_15m['ema_macro_15m'].iloc[-1] if len(df_15m) > 0 else df['Close'].mean()
+                    
+                    if len(df_15m) > 0:
+                        df['ema_macro_15m'] = df_15m['ema_macro_15m'].iloc[-1]
+                    else:
+                        df['ema_macro_15m'] = df['Close'].mean()
                     return df
         except Exception as e:
             print(f"Errore connessione Coinbase: {e}")
@@ -374,7 +378,7 @@ def esegui_ciclo():
         capitale_lotto = CAPITALE_PER_LOTTO * fattore
 
         vol_ok = vol >= (vol_med * (0.6 if regime == "TREND (Aggressivo)" else 0.8))
-        cond_ingr = (ema_v > ema_l and prezzo > df['ema_macro_15m'] and vol_ok and obv_cresc) if regime == "TREND (Aggressivo)" else (rsi < 38 and vol_ok)
+        cond_ingr = (ema_v > ema_l and prezzo > df['ema_macro_15m'].iloc[-1] and vol_ok and obv_cresc) if regime == "TREND (Aggressivo)" else (rsi < 38 and vol_ok)
 
         if lotti_attivi < MAX_LOTTI and cond_ingr:
             costo_netto = capitale_lotto
@@ -386,7 +390,7 @@ def esegui_ciclo():
                 nuovo_id = len(portafoglio["lotti"]) + 1
                 
                 portafoglio["lotti"].append({
-                    "id": nuovo_id, 
+                    "id": nuevo_id if 'nuevo_id' in locals() else nuovo_id, 
                     "prezzo_entrata": prezzo, 
                     "quantita": quantita, 
                     "spesa": costo_tot
