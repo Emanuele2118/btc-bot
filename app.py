@@ -57,7 +57,7 @@ st.title("📊 Monitoraggio Bot in Tempo Reale")
 with st.sidebar:
     st.header("⚙️ Stato Sistema")
     st.success("🟢 Connessione Live Attiva")
-    intervallo_refresh = st.slider("Interfaccia aggiornamento (sec)", min_value=2, max_value=15, value=5)
+    intervallo_refresh = st.slider("Intervallo aggiornamento (sec)", min_value=2, max_value=15, value=5)
     
     if st.button("🔄 Forza Aggiornamento"):
         st.rerun()
@@ -65,11 +65,8 @@ with st.sidebar:
 # Contenitore dinamico che si aggiorna senza ricaricare tutta la pagina web
 placeholder = st.empty()
 
-# Usiamo un frammento o un ciclo controllato per l'aggiornamento continuo live
-# In Streamlit, un piccolo trucco pulito per il loop live senza librerie esterne:
 @st.fragment
 def esegui_aggiornamento_live():
-    # Loop interno che aggiorna il blocco dati ogni X secondi
     while True:
         portafoglio = carica_portafoglio()
         prezzo_attuale = ottieni_prezzo_corrente()
@@ -77,16 +74,20 @@ def esegui_aggiornamento_live():
         lotti = portafoglio.get("lotti", [])
         saldo_usd = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
 
-        # Calcoli
+        # Calcoli generali e P&L Attivo (Non Realizzato)
         q_tot = sum(l['quantita'] for l in lotti)
         spesa_tot = sum(l['spesa'] for l in lotti)
         valore_posizioni = q_tot * prezzo_attuale
+        
+        # P&L Attivo totale delle posizioni aperte
+        pnl_attivo_totale = valore_posizioni - spesa_tot
+        pnl_attivo_perc = (pnl_attivo_totale / spesa_tot) * 100 if spesa_tot > 0 else 0.0
+
         valore_totale_portafoglio = saldo_usd + valore_posizioni
         storico = portafoglio.get("storico_operazioni", [])
         profitto_operazioni_chiuse = sum(storico)
         valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
 
-        # Scriviamo/aggiorniamo l'interfaccia dentro il blocco container
         with placeholder.container():
             st.markdown(f"*(Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S')})* — Prezzo Bitcoin: **${prezzo_attuale:,.2f}**")
             
@@ -107,25 +108,27 @@ def esegui_aggiornamento_live():
                     
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        colore_testo = "green" if pnl_lotto >= 0 else "red"
                         st.markdown(
                             f"**BTCUSD**, BUY `{q_lotto:.4f}`\n\n"
                             f"<span style='color:gray; font-size:0.9em;'>Entrata: ${p_entrata:,.2f} | Attuale: ${prezzo_attuale:,.2f}</span>",
                             unsafe_allow_html=True
                         )
                     with col2:
+                        colore_testo = "green" if pnl_lotto >= 0 else "red"
                         st.markdown(
                             f"<div style='text-align: right;'>"
                             f"<span style='color:{colore_testo}; font-weight: bold; font-size: 1.1em;'>${pnl_lotto:+,.2f}</span><br>"
+                            f"<span style='color:{colore_testo}; font-size: 0.85em;'>({pnl_lotto_perc:+.2f}%)</span><br>"
                             f"<span style='color:gray; font-size: 0.8em;'>ID: {id_lotto}</span>"
                             f"</div>",
                             unsafe_allow_html=True
                         )
                     st.divider()
 
-            # Sezione Riepilogo
+            # Sezione Riepilogo con P&L Attivo
             st.markdown("### Riepilogo")
-            colore_pnl = "green" if profitto_operazioni_chiuse >= 0 else "red"
+            colore_pnl_chiuse = "green" if profitto_operazioni_chiuse >= 0 else "red"
+            colore_pnl_attivo = "green" if pnl_attivo_totale >= 0 else "red"
 
             st.markdown(
                 f"""
@@ -135,8 +138,12 @@ def esegui_aggiornamento_live():
                         <span style="font-weight: 600;">${valore_iniziale:,.2f}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                        <span style="color: #333; font-weight: 500;">Profitto Operazioni Chiuse (P&L)</span>
-                        <span style="color: {colore_pnl}; font-weight: 600;">${profitto_operazioni_chiuse:+,.2f}</span>
+                        <span style="color: #333; font-weight: 500;">P&L Attivo (Non Realizzato)</span>
+                        <span style="color: {colore_pnl_attivo}; font-weight: 600;">${pnl_attivo_totale:+,.2f} ({pnl_attivo_perc:+.2f}%)</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #333; font-weight: 500;">Profitto Operazioni Chiuse</span>
+                        <span style="color: {colore_pnl_chiuse}; font-weight: 600;">${profitto_operazioni_chiuse:+,.2f}</span>
                     </div>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
                     <div style="display: flex; justify-content: space-between;">
@@ -152,7 +159,6 @@ def esegui_aggiornamento_live():
                 unsafe_allow_html=True
             )
         
-        # Pausa prima del prossimo ciclo di aggiornamento live
         time.sleep(intervallo_refresh)
 
 # Avvia il frammento in tempo reale
