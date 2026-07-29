@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 st.set_page_config(page_title="BTC Bot Dashboard Live", page_icon="📈", layout="wide")
 
 PORTFOLIO_FILE = "portfolio.json"
-STORICO_TELEGRAM_FILE = "storico_telegram.json"  # File dove il bot salva i messaggi
+MESSAGGI_BOT_FILE = "storico_messaggi.json"  # Dove il bot scrive i log e gli eventi
 CAPITALE_INIZIALE = 10000.0
 
 # ==================== FUNZIONI DI SUPPORTO ====================
@@ -31,10 +31,10 @@ def carica_portafoglio():
         "storico_operazioni": []
     }
 
-def carica_storico_telegram():
-    if os.path.exists(STORICO_TELEGRAM_FILE):
+def carica_messaggi_bot():
+    if os.path.exists(MESSAGGI_BOT_FILE):
         try:
-            with open(STORICO_TELEGRAM_FILE, 'r') as f:
+            with open(MESSAGGI_BOT_FILE, 'r') as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     return data
@@ -68,20 +68,19 @@ with st.sidebar:
     st.header("⚙️ Stato Sistema")
     st.success("⚡ Connessione Iper-Realtime")
     
-    # Navigazione a sezioni nell'app
-    scelta_vista = st.radio("Navigazione", ["📊 Dashboard Live", "📜 Storico Messaggi Bot"])
+    scelta_vista = st.radio("Navigazione", ["📊 Dashboard & Portfolio", "📜 Log & Eventi del Bot"])
     
     if st.button("🔄 Forza Aggiornamento"):
         st.rerun()
 
-# Contenitore dinamico
+# Contenitore dinamico per l'aggiornamento in tempo reale
 placeholder = st.empty()
 
 @st.fragment
 def esegui_aggiornamento_live():
     while True:
         portafoglio = carica_portafoglio()
-        storico_tg = carica_storico_telegram()
+        messaggi_bot = carica_messaggi_bot()
         prezzo_attuale = ottieni_prezzo_corrente()
 
         lotti = portafoglio.get("lotti", [])
@@ -100,7 +99,7 @@ def esegui_aggiornamento_live():
         valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
 
         with placeholder.container():
-            if scelta_vista == "📊 Dashboard Live":
+            if scelta_vista == "📊 Dashboard & Portfolio":
                 # Prezzo Bitcoin in evidenza in alto
                 st.markdown(
                     f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
@@ -178,19 +177,33 @@ def esegui_aggiornamento_live():
                 )
 
             else:
-                # Sezione Storico Notifiche/Messaggi Telegram
-                st.subheader("📜 Storico Notifiche e Report Telegram")
-                if not storico_tg:
-                    st.info("Nessun messaggio registrato nello storico. Il bot salverà qui i messaggi man mano che vengono inviati.")
+                # Sezione Log ed Eventi scritti dal Bot
+                st.subheader("📜 Feed Attività e Log del Bot")
+                if not messaggi_bot:
+                    st.info("Nessun evento registrato. Il bot scriverà qui i segnali, i take profit e i resoconti.")
                 else:
-                    for msg in reversed(storico_tg):
-                        timestamp = msg.get('timestamp', 'Orario non disponibile')
-                        testo = msg.get('testo', '')
+                    for ev in reversed(messaggi_bot):
+                        timestamp = ev.get('timestamp', '')
+                        titolo = ev.get('titolo', 'Evento')
+                        testo = ev.get('testo', '')
+                        tipo = ev.get('tipo', 'info') # info, success, warning
+                        
+                        colore_bordo = "#0066cc"
+                        if tipo == "success":
+                            colore_bordo = "#28a745"
+                        elif tipo == "warning":
+                            colore_bordo = "#ffc107"
+                        elif tipo == "error":
+                            colore_bordo = "#dc3545"
+
                         st.markdown(
                             f"""
-                            <div style="background-color: #f1f3f4; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #0066cc;">
-                                <span style="font-size: 0.8em; color: gray;">{timestamp}</span><br>
-                                <span style="font-size: 0.95em; color: #111; white-space: pre-wrap;">{testo}</span>
+                            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 5px solid {colore_bordo}; border: 1px solid #e0e0e0;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                    <strong style="color: #222; font-size: 1.05em;">{titolo}</strong>
+                                    <span style="font-size: 0.8em; color: gray;">{timestamp}</span>
+                                </div>
+                                <div style="color: #444; font-size: 0.95em; white-space: pre-wrap;">{testo}</div>
                             </div>
                             """,
                             unsafe_allow_html=True
