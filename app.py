@@ -100,7 +100,7 @@ def esegui_aggiornamento_live():
 
         with placeholder.container():
             if scelta_vista == "📊 Dashboard & Portfolio":
-                # Prezzo Bitcoin in evidenza in alto
+                # Prezzo Bitcoin ingrandito in alto
                 st.markdown(
                     f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
                     f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
@@ -186,7 +186,7 @@ def esegui_aggiornamento_live():
                         timestamp = ev.get('timestamp', '')
                         titolo = ev.get('titolo', 'Evento')
                         testo = ev.get('testo', '')
-                        tipo = ev.get('tipo', 'info') # info, success, warning
+                        tipo = ev.get('tipo', 'info')
                         
                         colore_bordo = "#0066cc"
                         if tipo == "success":
@@ -209,6 +209,7 @@ def esegui_aggiornamento_live():
                             unsafe_allow_html=True
                         )
             
+            # Scritta dell'ultimo aggiornamento in fondo a tutto
             st.markdown(
                 f"<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 30px;'>"
                 f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
