@@ -21,7 +21,7 @@ PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 600.0   
-MAX_LOTTI = 15               
+MAX_LOTTI = 15                 
 FEE_PERCENTUALE = 0.001        
 MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
@@ -383,7 +383,7 @@ def esegui_ciclo():
 
         if lotti_attivi < MAX_LOTTI and cond_ingr:
             costo_netto = capitale_lotto
-            costo_tot = cost_netto + (costo_netto * FEE_PERCENTUALE)
+            costo_tot = costo_netto + (costo_netto * FEE_PERCENTUALE)
             
             if saldo >= costo_tot:
                 quantita = capitale_lotto / prezzo
@@ -408,18 +408,16 @@ def esegui_ciclo():
                 ExecutionEngine.invia_a_google_sheets("ACQUISTO", prezzo, quantita, -costo_tot, portafoglio["saldo_usd"])
                 ExecutionEngine.invia_telegram(messaggio)
 
-    # REPORT PERIODICO (BLINDATO CON TIMER RIGOROSO)
+    # REPORT PERIODICO (BLINDATO CON TIMER RIGOROSO A 5 MINUTI)
     ultimo_rep = portafoglio.get("ultimo_report_time", 0.0)
     if ultimo_rep is None:
         ultimo_rep = 0.0
         
     tempo_trascorso = ts - ultimo_rep
-    puoi_report = tempo_trascorso >= 300
-
-    if not azione_eseguita and puoi_report:
+    if tempo_trascorso >= 300:
         dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo.\n"
 
-        messaggio = (
+        messaggio_report = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
             f"• Bitcoin: ${prezzo:,.2f}\n"
             f"• Situazione: {regime}\n"
@@ -430,7 +428,7 @@ def esegui_ciclo():
         ExecutionEngine.salva_portafoglio(portafoglio)
         
         chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
-        ExecutionEngine.invia_telegram(messaggio, chart)
+        ExecutionEngine.invia_telegram(messaggio_report, chart)
 
 if __name__ == "__main__":
     print("Avvio del server web per Render...")
@@ -443,4 +441,4 @@ if __name__ == "__main__":
             esegui_ciclo()
         except Exception as e:
             print(f"Errore nel ciclo: {e}")
-        time.sleep(300)
+        time.sleep(30)  # Controlla regolarmente ogni 30 secondi per mantenere il timer dei 5 minuti precisissimo
