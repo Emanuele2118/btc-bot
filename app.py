@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 st.set_page_config(page_title="BTC Bot Dashboard Live", page_icon="📈", layout="wide")
 
 PORTFOLIO_FILE = "portfolio.json"
+STORICO_TELEGRAM_FILE = "storico_telegram.json"  # File dove il bot salva i messaggi
 CAPITALE_INIZIALE = 10000.0
 
 # ==================== FUNZIONI DI SUPPORTO ====================
@@ -29,6 +30,17 @@ def carica_portafoglio():
         "valore_iniziale_giornata": CAPITALE_INIZIALE,
         "storico_operazioni": []
     }
+
+def carica_storico_telegram():
+    if os.path.exists(STORICO_TELEGRAM_FILE):
+        try:
+            with open(STORICO_TELEGRAM_FILE, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except Exception:
+            pass
+    return []
 
 def ottieni_prezzo_corrente():
     try:
@@ -56,18 +68,20 @@ with st.sidebar:
     st.header("⚙️ Stato Sistema")
     st.success("⚡ Connessione Iper-Realtime")
     
+    # Navigazione a sezioni nell'app
+    scelta_vista = st.radio("Navigazione", ["📊 Dashboard Live", "📜 Storico Messaggi Bot"])
+    
     if st.button("🔄 Forza Aggiornamento"):
         st.rerun()
 
-# Contenitore dinamico per l'aggiornamento istantaneo
+# Contenitore dinamico
 placeholder = st.empty()
 
 @st.fragment
 def esegui_aggiornamento_live():
-    ultimo_prezzo = 0.0
-    
     while True:
         portafoglio = carica_portafoglio()
+        storico_tg = carica_storico_telegram()
         prezzo_attuale = ottieni_prezzo_corrente()
 
         lotti = portafoglio.get("lotti", [])
@@ -86,81 +100,101 @@ def esegui_aggiornamento_live():
         valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
 
         with placeholder.container():
-            # Prezzo Bitcoin in evidenza in alto
-            st.markdown(
-                f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
-                f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-            
-            st.subheader("Posizioni Attive")
+            if scelta_vista == "📊 Dashboard Live":
+                # Prezzo Bitcoin in evidenza in alto
+                st.markdown(
+                    f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
+                    f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                
+                st.subheader("Posizioni Attive")
 
-            if not lotti:
-                st.info("Nessun lotto attivo al momento. Il bot è in attesa di segnali d'ingresso.")
+                if not lotti:
+                    st.info("Nessun lotto attivo al momento. Il bot è in attesa di segnali d'ingresso.")
+                else:
+                    for lotto in lotti:
+                        p_entrata = lotto['prezzo_entrata']
+                        q_lotto = lotto['quantita']
+                        spesa_lotto = lotto['spesa']
+                        id_lotto = lotto['id']
+                        
+                        valore_attuale_lotto = q_lotto * prezzo_attuale
+                        pnl_lotto = valore_attuale_lotto - spesa_lotto
+                        pnl_lotto_perc = (pnl_lotto / spesa_lotto) * 100 if spesa_lotto > 0 else 0
+                        
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.markdown(
+                                f"**BTCUSD**, BUY `{q_lotto:.4f}`\n\n"
+                                f"<span style='color:gray; font-size:0.9em;'>Entrata: ${p_entrata:,.2f} | Attuale: ${prezzo_attuale:,.2f}</span>",
+                                unsafe_allow_html=True
+                            )
+                        with col2:
+                            colore_testo = "green" if pnl_lotto >= 0 else "red"
+                            st.markdown(
+                                f"<div style='text-align: right;'>"
+                                f"<span style='color:{colore_testo}; font-weight: bold; font-size: 1.1em;'>${pnl_lotto:+,.2f}</span><br>"
+                                f"<span style='color:{colore_testo}; font-size: 0.85em;'>({pnl_lotto_perc:+.2f}%)</span><br>"
+                                f"<span style='color:gray; font-size: 0.8em;'>ID: {id_lotto}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+                        st.divider()
+
+                # Sezione Riepilogo
+                st.markdown("### Riepilogo")
+                colore_pnl_chiuse = "green" if profitto_operazioni_chiuse >= 0 else "red"
+                colore_pnl_attivo = "green" if pnl_attivo_totale >= 0 else "red"
+
+                st.markdown(
+                    f"""
+                    <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="color: #333; font-weight: 500;">Valore Iniziale Giornata</span>
+                            <span style="font-weight: 600;">${valore_iniziale:,.2f}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="color: #333; font-weight: 500;">P&L Attivo (Non Realizzato)</span>
+                            <span style="color: {colore_pnl_attivo}; font-weight: 600;">${pnl_attivo_totale:+,.2f} ({pnl_attivo_perc:+.2f}%)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="color: #333; font-weight: 500;">Profitto Operazioni Chiuse</span>
+                            <span style="color: {colore_pnl_chiuse}; font-weight: 600;">${profitto_operazioni_chiuse:+,.2f}</span>
+                        </div>
+                        <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: #111; font-weight: bold; font-size: 1.1em;">Saldo USD (Balance)</span>
+                            <span style="color: #0066cc; font-weight: bold; font-size: 1.1em;">${saldo_usd:,.2f}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                            <span style="color: #111; font-weight: bold; font-size: 1.1em;">Valore Totale Portafoglio</span>
+                            <span style="color: #222; font-weight: bold; font-size: 1.1em;">${valore_totale_portafoglio:,.2f}</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
             else:
-                for lotto in lotti:
-                    p_entrata = lotto['prezzo_entrata']
-                    q_lotto = lotto['quantita']
-                    spesa_lotto = lotto['spesa']
-                    id_lotto = lotto['id']
-                    
-                    valore_attuale_lotto = q_lotto * prezzo_attuale
-                    pnl_lotto = valore_attuale_lotto - spesa_lotto
-                    pnl_lotto_perc = (pnl_lotto / spesa_lotto) * 100 if spesa_lotto > 0 else 0
-                    
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
+                # Sezione Storico Notifiche/Messaggi Telegram
+                st.subheader("📜 Storico Notifiche e Report Telegram")
+                if not storico_tg:
+                    st.info("Nessun messaggio registrato nello storico. Il bot salverà qui i messaggi man mano che vengono inviati.")
+                else:
+                    for msg in reversed(storico_tg):
+                        timestamp = msg.get('timestamp', 'Orario non disponibile')
+                        testo = msg.get('testo', '')
                         st.markdown(
-                            f"**BTCUSD**, BUY `{q_lotto:.4f}`\n\n"
-                            f"<span style='color:gray; font-size:0.9em;'>Entrata: ${p_entrata:,.2f} | Attuale: ${prezzo_attuale:,.2f}</span>",
+                            f"""
+                            <div style="background-color: #f1f3f4; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #0066cc;">
+                                <span style="font-size: 0.8em; color: gray;">{timestamp}</span><br>
+                                <span style="font-size: 0.95em; color: #111; white-space: pre-wrap;">{testo}</span>
+                            </div>
+                            """,
                             unsafe_allow_html=True
                         )
-                    with col2:
-                        colore_testo = "green" if pnl_lotto >= 0 else "red"
-                        st.markdown(
-                            f"<div style='text-align: right;'>"
-                            f"<span style='color:{colore_testo}; font-weight: bold; font-size: 1.1em;'>${pnl_lotto:+,.2f}</span><br>"
-                            f"<span style='color:{colore_testo}; font-size: 0.85em;'>({pnl_lotto_perc:+.2f}%)</span><br>"
-                            f"<span style='color:gray; font-size: 0.8em;'>ID: {id_lotto}</span>"
-                            f"</div>",
-                            unsafe_allow_html=True
-                        )
-                    st.divider()
-
-            # Sezione Riepilogo
-            st.markdown("### Riepilogo")
-            colore_pnl_chiuse = "green" if profitto_operazioni_chiuse >= 0 else "red"
-            colore_pnl_attivo = "green" if pnl_attivo_totale >= 0 else "red"
-
-            st.markdown(
-                f"""
-                <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                        <span style="color: #333; font-weight: 500;">Valore Iniziale Giornata</span>
-                        <span style="font-weight: 600;">${valore_iniziale:,.2f}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                        <span style="color: #333; font-weight: 500;">P&L Attivo (Non Realizzato)</span>
-                        <span style="color: {colore_pnl_attivo}; font-weight: 600;">${pnl_attivo_totale:+,.2f} ({pnl_attivo_perc:+.2f}%)</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                        <span style="color: #333; font-weight: 500;">Profitto Operazioni Chiuse</span>
-                        <span style="color: {colore_pnl_chiuse}; font-weight: 600;">${profitto_operazioni_chiuse:+,.2f}</span>
-                    </div>
-                    <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span style="color: #111; font-weight: bold; font-size: 1.1em;">Saldo USD (Balance)</span>
-                        <span style="color: #0066cc; font-weight: bold; font-size: 1.1em;">${saldo_usd:,.2f}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-                        <span style="color: #111; font-weight: bold; font-size: 1.1em;">Valore Totale Portafoglio</span>
-                        <span style="color: #222; font-weight: bold; font-size: 1.1em;">${valore_totale_portafoglio:,.2f}</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
             
             st.markdown(
                 f"<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 30px;'>"
@@ -169,7 +203,6 @@ def esegui_aggiornamento_live():
                 unsafe_allow_html=True
             )
         
-        # Ridotto a 1 secondo per un aggiornamento immediato senza sovraccaricare le API
         time.sleep(1)
 
 esegui_aggiornamento_live()
