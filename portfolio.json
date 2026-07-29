@@ -2,13 +2,13 @@
     "saldo_usd": 5532.64,
     "lotti": [
         {
-            "id": 3,
+            "id": 1,
             "prezzo_entrata": 63358.57,
             "quantita": 0.0335392670636348,
             "spesa": 2127.125
         },
         {
-            "id": 4,
+            "id": 2,
             "prezzo_entrata": 63333.05,
             "quantita": 0.033552781683497006,
             "spesa": 2127.125
@@ -17,7 +17,7 @@
     "ultima_operazione_time": 1785219033.737702,
     "ultimo_report_time": 1785244846.236377,
     "valore_iniziale_giornata": 9818.013550058202,
-    "data_ultima_registrazione": "2026-07-28",
+    "data_ultima_registrazione": "2026-07-29",
     "blocco_drawdown_fino": 0.0,
     "storico_operazioni": [
         -322.6817982929242,
