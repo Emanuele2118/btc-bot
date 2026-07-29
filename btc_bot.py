@@ -389,24 +389,36 @@ def esegui_ciclo():
                 ExecutionEngine.invia_a_google_sheets("ACQUISTO", prezzo, quantita, -costo_tot, portafoglio["saldo_usd"])
                 ExecutionEngine.invia_telegram(messaggio)
 
-    # REPORT PERIODICO (OGNI 5 MINUTI)
+     # REPORT PERIODICO (OGNI 5 MINUTI)
     ultimo_rep = portafoglio.get("ultimo_report_time", 0.0)
     if ultimo_rep is None: ultimo_rep = 0.0
         
     if (ts - ultimo_rep) >= 300:
-        dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo.\n"
+        # Crea la lista dettagliata di tutti i lotti attivi
+        dettaglio_lotti_str = ""
+        if lotti_attivi > 0:
+            dettaglio_lotti_str = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n\n*Dettaglio Lotti:*\n"
+            for l in lotti:
+                p_ent = l['prezzo_entrata']
+                q_lotto = l['quantita']
+                pnl_l = ((prezzo - p_ent) / p_ent) * 100
+                dettaglio_lotti_str += f"🔹 Lotto #{l['id']}: Entrata ${p_ent:,.2f} | Q.tà: {q_lotto:.4f} | P&L: {pnl_l:+.2f}%\n"
+        else:
+            dettaglio_lotti_str = "• Nessun lotto attivo.\n"
+
         messaggio_report = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
             f"• Bitcoin: ${prezzo:,.2f}\n"
             f"• Situazione: {regime}\n"
             f"• RSI: {rsi:.1f} | ATR: ${atr:.2f}\n\n"
-            f"{dett_pos}"
+            f"{dettaglio_lotti_str}"
         )
         portafoglio["ultimo_report_time"] = ts
         ExecutionEngine.salva_portafoglio(portafoglio)
         
         chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
         ExecutionEngine.invia_telegram(messaggio_report, chart)
+
 
 def avvia_bot_in_background():
     def loop_bot():
