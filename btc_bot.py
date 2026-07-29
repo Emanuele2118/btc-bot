@@ -18,7 +18,6 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GOOGLE_SHEET_URL = os.environ.get("GOOGLE_SHEET_URL")
 
 PORTFOLIO_FILE = "portfolio.json"
-PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 600.0   
@@ -136,13 +135,6 @@ class ExecutionEngine:
                     data = json.load(f)
             except Exception as e:
                 print(f"Errore lettura file: {e}")
-                
-        if not data and os.path.exists(PORTFOLIO_BACKUP_FILE):
-            try:
-                with open(PORTFOLIO_BACKUP_FILE, 'r') as f:
-                    data = json.load(f)
-            except Exception as e:
-                print(f"Errore lettura backup: {e}")
 
         oggi_italia_str = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
         if isinstance(data, dict):
@@ -167,7 +159,6 @@ class ExecutionEngine:
     def salva_portafoglio(portafoglio):
         try:
             with open(PORTFOLIO_FILE, 'w') as f: json.dump(portafoglio, f, indent=4)
-            with open(PORTFOLIO_BACKUP_FILE, 'w') as f: json.dump(portafoglio, f, indent=4)
         except Exception as e:
             print(f"Errore salvataggio: {e}")
 
@@ -242,7 +233,7 @@ class ExecutionEngine:
             print(f"Errore grafico: {e}")
             return None
 
-# ==================== WEB SERVER PER RENDER (WEB SERVICE) ====================
+# ==================== WEB SERVER PER RENDER ====================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -276,7 +267,6 @@ def esegui_ciclo():
     now_utc = datetime.now(timezone.utc)
     ts = now_utc.timestamp()
     
-    # Gestione orario italiano per il cambio giornata a mezzanotte esatta
     now_italia = datetime.now(ZoneInfo("Europe/Rome"))
     oggi_italia_str = now_italia.strftime("%Y-%m-%d")
 
@@ -413,7 +403,7 @@ def esegui_ciclo():
                 ExecutionEngine.invia_a_google_sheets("ACQUISTO", prezzo, quantita, -costo_tot, portafoglio["saldo_usd"])
                 ExecutionEngine.invia_telegram(messaggio)
 
-    # REPORT PERIODICO (BLINDATO CON TIMER RIGOROSO A 5 MINUTI)
+    # REPORT PERIODICO (OGNI 5 MINUTI)
     ultimo_rep = portafoglio.get("ultimo_report_time", 0.0)
     if ultimo_rep is None:
         ultimo_rep = 0.0
@@ -446,4 +436,4 @@ if __name__ == "__main__":
             esegui_ciclo()
         except Exception as e:
             print(f"Errore nel ciclo: {e}")
-        time.sleep(30)  # Controlla regolarmente ogni 30 secondi per mantenere il timer dei 5 minuti precisissimo
+        time.sleep(30)
