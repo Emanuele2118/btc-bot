@@ -88,6 +88,14 @@ def esegui_aggiornamento_live():
         valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
 
         with placeholder.container():
+            # Prezzo Bitcoin ingrandito in alto
+            st.markdown(
+                f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
+                f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+            
             st.subheader("Posizioni Attive")
 
             if not lotti:
@@ -156,10 +164,10 @@ def esegui_aggiornamento_live():
                 unsafe_allow_html=True
             )
             
-            # Scritta dell'ultimo aggiornamento spostata in fondo alla pagina
+            # Scritta dell'ultimo aggiornamento in fondo a tutto
             st.markdown(
                 f"<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 30px;'>"
-                f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S')} — Prezzo Bitcoin: <b>${prezzo_attuale:,.2f}</b>"
+                f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S')}"
                 f"</div>",
                 unsafe_allow_html=True
             )
