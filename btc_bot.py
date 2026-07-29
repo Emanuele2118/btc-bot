@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -21,7 +22,7 @@ PORTFOLIO_BACKUP_FILE = "portfolio_backup.json"
 
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 600.0   
-MAX_LOTTI = 15                 
+MAX_LOTTI = 15                   
 FEE_PERCENTUALE = 0.001        
 MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
@@ -143,13 +144,14 @@ class ExecutionEngine:
             except Exception as e:
                 print(f"Errore lettura backup: {e}")
 
+        oggi_italia_str = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
         if isinstance(data, dict):
             if "saldo_usd" not in data: data["saldo_usd"] = CAPITALE_INIZIALE
             if "lotti" not in data: data["lotti"] = []
             if "ultima_operazione_time" not in data: data["ultima_operazione_time"] = 0
             if "ultimo_report_time" not in data: data["ultimo_report_time"] = 0.0
             if "valore_iniziale_giornata" not in data: data["valore_iniziale_giornata"] = CAPITALE_INIZIALE
-            if "data_ultima_registrazione" not in data: data["data_ultima_registrazione"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if "data_ultima_registrazione" not in data: data["data_ultima_registrazione"] = oggi_italia_str
             if "blocco_drawdown_fino" not in data: data["blocco_drawdown_fino"] = 0.0
             if "storico_operazioni" not in data: data["storico_operazioni"] = []
             return data
@@ -157,7 +159,7 @@ class ExecutionEngine:
         return {
             "saldo_usd": CAPITALE_INIZIALE, "lotti": [], "ultima_operazione_time": 0,
             "ultimo_report_time": 0.0, "valore_iniziale_giornata": CAPITALE_INIZIALE,
-            "data_ultima_registrazione": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "data_ultima_registrazione": oggi_italia_str,
             "blocco_drawdown_fino": 0.0, "storico_operazioni": []
         }
 
@@ -273,9 +275,12 @@ def esegui_ciclo():
     lotti_attivi = len(lotti)
     now_utc = datetime.now(timezone.utc)
     ts = now_utc.timestamp()
-    oggi_str = now_utc.strftime("%Y-%m-%d")
+    
+    # Gestione orario italiano per il cambio giornata a mezzanotte esatta
+    now_italia = datetime.now(ZoneInfo("Europe/Rome"))
+    oggi_italia_str = now_italia.strftime("%Y-%m-%d")
 
-    if portafoglio.get("data_ultima_registrazione", oggi_str) != oggi_str:
+    if portafoglio.get("data_ultima_registrazione", oggi_italia_str) != oggi_italia_str:
         val_portafoglio = portafoglio["saldo_usd"] + sum(l['quantita'] * prezzo for l in lotti)
         val_ieri = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
         diff = val_portafoglio - val_ieri
@@ -293,7 +298,7 @@ def esegui_ciclo():
         )
         ExecutionEngine.invia_telegram(msg_giorno)
         portafoglio["valore_iniziale_giornata"] = val_portafoglio
-        portafoglio["data_ultima_registrazione"] = oggi_str
+        portafoglio["data_ultima_registrazione"] = oggi_italia_str
         portafoglio["storico_operazioni"] = []
         ExecutionEngine.salva_portafoglio(portafoglio)
 
