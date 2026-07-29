@@ -152,7 +152,7 @@ def esegui_aggiornamento_live():
                     <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                             <span style="color: #333; font-weight: 500;">Valore Iniziale Giornata</span>
-                            <span style="font-weight: 600;">${valore_iniziale:,.2f}</span>
+                            <span style="color: #333; font-weight: 600;">${valore_iniziale:,.2f}</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                             <span style="color: #333; font-weight: 500;">P&L Attivo (Non Realizzato)</span>
