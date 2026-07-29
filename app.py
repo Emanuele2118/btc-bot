@@ -51,13 +51,12 @@ def ottieni_prezzo_corrente():
     return 63000.0
 
 # ==================== INTERFACCIA PRINCIPALE ====================
-st.title("📊 Monitoraggio Bot in Tempo Reale")
 
 # Sidebar con indicatore di stato live
 with st.sidebar:
     st.header("⚙️ Stato Sistema")
     st.success("🟢 Connessione Live Attiva")
-    intervallo_refresh = st.slider("Intervallo aggiornamento (sec)", min_value=2, max_value=15, value=5)
+    intervallo_refresh = st.slider("Interfaccia aggiornamento (sec)", min_value=2, max_value=15, value=5)
     
     if st.button("🔄 Forza Aggiornamento"):
         st.rerun()
