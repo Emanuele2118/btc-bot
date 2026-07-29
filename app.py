@@ -34,7 +34,7 @@ def ottieni_prezzo_corrente():
     try:
         url = "https://api.exchange.coinbase.com/products/BTC-USD/ticker"
         headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=3)
+        res = requests.get(url, headers=headers, timeout=2)
         if res.status_code == 200:
             return float(res.json().get('price'))
     except:
@@ -42,7 +42,7 @@ def ottieni_prezzo_corrente():
 
     try:
         url_binance = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
-        res = requests.get(url_binance, timeout=3)
+        res = requests.get(url_binance, timeout=2)
         if res.status_code == 200:
             return float(res.json().get('price'))
     except:
@@ -52,20 +52,20 @@ def ottieni_prezzo_corrente():
 
 # ==================== INTERFACCIA PRINCIPALE ====================
 
-# Sidebar con indicatore di stato live
 with st.sidebar:
     st.header("⚙️ Stato Sistema")
-    st.success("🟢 Connessione Live Attiva")
-    intervallo_refresh = st.slider("Interfaccia aggiornamento (sec)", min_value=2, max_value=15, value=5)
+    st.success("⚡ Connessione Iper-Realtime")
     
     if st.button("🔄 Forza Aggiornamento"):
         st.rerun()
 
-# Contenitore dinamico che si aggiorna senza ricaricare tutta la pagina web
+# Contenitore dinamico per l'aggiornamento istantaneo
 placeholder = st.empty()
 
 @st.fragment
 def esegui_aggiornamento_live():
+    ultimo_prezzo = 0.0
+    
     while True:
         portafoglio = carica_portafoglio()
         prezzo_attuale = ottieni_prezzo_corrente()
@@ -73,12 +73,10 @@ def esegui_aggiornamento_live():
         lotti = portafoglio.get("lotti", [])
         saldo_usd = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
 
-        # Calcoli generali e P&L Attivo (Non Realizzato)
         q_tot = sum(l['quantita'] for l in lotti)
         spesa_tot = sum(l['spesa'] for l in lotti)
         valore_posizioni = q_tot * prezzo_attuale
         
-        # P&L Attivo totale delle posizioni aperte
         pnl_attivo_totale = valore_posizioni - spesa_tot
         pnl_attivo_perc = (pnl_attivo_totale / spesa_tot) * 100 if spesa_tot > 0 else 0.0
 
@@ -88,7 +86,7 @@ def esegui_aggiornamento_live():
         valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
 
         with placeholder.container():
-            # Prezzo Bitcoin ingrandito in alto
+            # Prezzo Bitcoin in evidenza in alto
             st.markdown(
                 f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
                 f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
@@ -130,7 +128,7 @@ def esegui_aggiornamento_live():
                         )
                     st.divider()
 
-            # Sezione Riepilogo con P&L Attivo
+            # Sezione Riepilogo
             st.markdown("### Riepilogo")
             colore_pnl_chiuse = "green" if profitto_operazioni_chiuse >= 0 else "red"
             colore_pnl_attivo = "green" if pnl_attivo_totale >= 0 else "red"
@@ -164,15 +162,14 @@ def esegui_aggiornamento_live():
                 unsafe_allow_html=True
             )
             
-            # Scritta dell'ultimo aggiornamento in fondo a tutto
             st.markdown(
                 f"<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 30px;'>"
-                f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S')}"
+                f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
                 f"</div>",
                 unsafe_allow_html=True
             )
         
-        time.sleep(intervallo_refresh)
+        # Ridotto a 1 secondo per un aggiornamento immediato senza sovraccaricare le API
+        time.sleep(1)
 
-# Avvia il frammento in tempo reale
 esegui_aggiornamento_live()
