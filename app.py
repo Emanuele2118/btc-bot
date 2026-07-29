@@ -73,150 +73,145 @@ with st.sidebar:
     if st.button("🔄 Forza Aggiornamento"):
         st.rerun()
 
-# Contenitore dinamico per l'aggiornamento in tempo reale
-placeholder = st.empty()
+# Utilizzo corretto di @st.fragment con run_every per il refresh periodico nativo
+@st.fragment(run_every=1)
+def renderizza_dashboard_live():
+    portafoglio = carica_portafoglio()
+    messaggi_bot = carica_messaggi_bot()
+    prezzo_attuale = ottieni_prezzo_corrente()
 
-@st.fragment
-def esegui_aggiornamento_live():
-    while True:
-        portafoglio = carica_portafoglio()
-        messaggi_bot = carica_messaggi_bot()
-        prezzo_attuale = ottieni_prezzo_corrente()
+    lotti = portafoglio.get("lotti", [])
+    saldo_usd = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
 
-        lotti = portafoglio.get("lotti", [])
-        saldo_usd = portafoglio.get("saldo_usd", CAPITALE_INIZIALE)
+    q_tot = sum(l['quantita'] for l in lotti)
+    spesa_tot = sum(l['spesa'] for l in lotti)
+    valore_posizioni = q_tot * prezzo_attuale
+    
+    pnl_attivo_totale = valore_posizioni - spesa_tot
+    pnl_attivo_perc = (pnl_attivo_totale / spesa_tot) * 100 if spesa_tot > 0 else 0.0
 
-        q_tot = sum(l['quantita'] for l in lotti)
-        spesa_tot = sum(l['spesa'] for l in lotti)
-        valore_posizioni = q_tot * prezzo_attuale
+    valore_totale_portafoglio = saldo_usd + valore_posizioni
+    storico = portafoglio.get("storico_operazioni", [])
+    profitto_operazioni_chiuse = sum(storico)
+    valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
+
+    if scelta_vista == "📊 Dashboard & Portfolio":
+        # Prezzo Bitcoin ingrandito in alto
+        st.markdown(
+            f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
+            f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
         
-        pnl_attivo_totale = valore_posizioni - spesa_tot
-        pnl_attivo_perc = (pnl_attivo_totale / spesa_tot) * 100 if spesa_tot > 0 else 0.0
+        st.subheader("Posizioni Attive")
 
-        valore_totale_portafoglio = saldo_usd + valore_posizioni
-        storico = portafoglio.get("storico_operazioni", [])
-        profitto_operazioni_chiuse = sum(storico)
-        valore_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
-
-        with placeholder.container():
-            if scelta_vista == "📊 Dashboard & Portfolio":
-                # Prezzo Bitcoin ingrandito in alto
-                st.markdown(
-                    f"<div style='font-size: 1.4em; font-weight: bold; margin-bottom: 20px;'>"
-                    f"₿ Prezzo Bitcoin: <span style='color: #0066cc;'>${prezzo_attuale:,.2f}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
+        if not lotti:
+            st.info("Nessun lotto attivo al momento. Il bot è in attesa di segnali d'ingresso.")
+        else:
+            for lotto in lotti:
+                p_entrata = lotto['prezzo_entrata']
+                q_lotto = lotto['quantita']
+                spesa_lotto = lotto['spesa']
+                id_lotto = lotto['id']
                 
-                st.subheader("Posizioni Attive")
+                valore_attuale_lotto = q_lotto * prezzo_attuale
+                pnl_lotto = valore_attuale_lotto - spesa_lotto
+                pnl_lotto_perc = (pnl_lotto / spesa_lotto) * 100 if spesa_lotto > 0 else 0
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(
+                        f"**BTCUSD**, BUY `{q_lotto:.4f}`\n\n"
+                        f"<span style='color:gray; font-size:0.9em;'>Entrata: ${p_entrata:,.2f} | Attuale: ${prezzo_attuale:,.2f}</span>",
+                        unsafe_allow_html=True
+                    )
+                with col2:
+                    colore_testo = "green" if pnl_lotto >= 0 else "red"
+                    st.markdown(
+                        f"<div style='text-align: right;'>"
+                        f"<span style='color:{colore_testo}; font-weight: bold; font-size: 1.1em;'>${pnl_lotto:+,.2f}</span><br>"
+                        f"<span style='color:{colore_testo}; font-size: 0.85em;'>({pnl_lotto_perc:+.2f}%)</span><br>"
+                        f"<span style='color:gray; font-size: 0.8em;'>ID: {id_lotto}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                st.divider()
 
-                if not lotti:
-                    st.info("Nessun lotto attivo al momento. Il bot è in attesa di segnali d'ingresso.")
-                else:
-                    for lotto in lotti:
-                        p_entrata = lotto['prezzo_entrata']
-                        q_lotto = lotto['quantita']
-                        spesa_lotto = lotto['spesa']
-                        id_lotto = lotto['id']
-                        
-                        valore_attuale_lotto = q_lotto * prezzo_attuale
-                        pnl_lotto = valore_attuale_lotto - spesa_lotto
-                        pnl_lotto_perc = (pnl_lotto / spesa_lotto) * 100 if spesa_lotto > 0 else 0
-                        
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(
-                                f"**BTCUSD**, BUY `{q_lotto:.4f}`\n\n"
-                                f"<span style='color:gray; font-size:0.9em;'>Entrata: ${p_entrata:,.2f} | Attuale: ${prezzo_attuale:,.2f}</span>",
-                                unsafe_allow_html=True
-                            )
-                        with col2:
-                            colore_testo = "green" if pnl_lotto >= 0 else "red"
-                            st.markdown(
-                                f"<div style='text-align: right;'>"
-                                f"<span style='color:{colore_testo}; font-weight: bold; font-size: 1.1em;'>${pnl_lotto:+,.2f}</span><br>"
-                                f"<span style='color:{colore_testo}; font-size: 0.85em;'>({pnl_lotto_perc:+.2f}%)</span><br>"
-                                f"<span style='color:gray; font-size: 0.8em;'>ID: {id_lotto}</span>"
-                                f"</div>",
-                                unsafe_allow_html=True
-                            )
-                        st.divider()
+        # Sezione Riepilogo
+        st.markdown("### Riepilogo")
+        colore_pnl_chiuse = "green" if profitto_operazioni_chiuse >= 0 else "red"
+        colore_pnl_attivo = "green" if pnl_attivo_totale >= 0 else "red"
 
-                # Sezione Riepilogo
-                st.markdown("### Riepilogo")
-                colore_pnl_chiuse = "green" if profitto_operazioni_chiuse >= 0 else "red"
-                colore_pnl_attivo = "green" if pnl_attivo_totale >= 0 else "red"
+        st.markdown(
+            f"""
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="color: #333; font-weight: 500;">Valore Iniziale Giornata</span>
+                    <span style="color: #333; font-weight: 600;">${valore_iniziale:,.2f}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="color: #333; font-weight: 500;">P&L Attivo (Non Realizzato)</span>
+                    <span style="color: {colore_pnl_attivo}; font-weight: 600;">${pnl_attivo_totale:+,.2f} ({pnl_attivo_perc:+.2f}%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="color: #333; font-weight: 500;">Profitto Operazioni Chiuse</span>
+                    <span style="color: {colore_pnl_chiuse}; font-weight: 600;">${profitto_operazioni_chiuse:+,.2f}</span>
+                </div>
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #111; font-weight: bold; font-size: 1.1em;">Saldo USD (Balance)</span>
+                    <span style="color: #0066cc; font-weight: bold; font-size: 1.1em;">${saldo_usd:,.2f}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                    <span style="color: #111; font-weight: bold; font-size: 1.1em;">Valore Totale Portafoglio</span>
+                    <span style="color: #222; font-weight: bold; font-size: 1.1em;">${valore_totale_portafoglio:,.2f}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    else:
+        # Sezione Log ed Eventi scritti dal Bot
+        st.subheader("📜 Feed Attività e Log del Bot")
+        if not messaggi_bot:
+            st.info("Nessun evento registrato. Il bot scriverà qui i segnali, i take profit e i resoconti.")
+        else:
+            for ev in reversed(messaggi_bot):
+                timestamp = ev.get('timestamp', '')
+                titolo = ev.get('titolo', 'Evento')
+                testo = ev.get('testo', '')
+                tipo = ev.get('tipo', 'info')
+                
+                colore_bordo = "#0066cc"
+                if tipo == "success":
+                    colore_bordo = "#28a745"
+                elif tipo == "warning":
+                    colore_bordo = "#ffc107"
+                elif tipo == "error":
+                    colore_bordo = "#dc3545"
 
                 st.markdown(
                     f"""
-                    <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="color: #333; font-weight: 500;">Valore Iniziale Giornata</span>
-                            <span style="color: #333; font-weight: 600;">${valore_iniziale:,.2f}</span>
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 5px solid {colore_bordo}; border: 1px solid #e0e0e0;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <strong style="color: #222; font-size: 1.05em;">{titolo}</strong>
+                            <span style="font-size: 0.8em; color: gray;">{timestamp}</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="color: #333; font-weight: 500;">P&L Attivo (Non Realizzato)</span>
-                            <span style="color: {colore_pnl_attivo}; font-weight: 600;">${pnl_attivo_totale:+,.2f} ({pnl_attivo_perc:+.2f}%)</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="color: #333; font-weight: 500;">Profitto Operazioni Chiuse</span>
-                            <span style="color: {colore_pnl_chiuse}; font-weight: 600;">${profitto_operazioni_chiuse:+,.2f}</span>
-                        </div>
-                        <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="color: #111; font-weight: bold; font-size: 1.1em;">Saldo USD (Balance)</span>
-                            <span style="color: #0066cc; font-weight: bold; font-size: 1.1em;">${saldo_usd:,.2f}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-                            <span style="color: #111; font-weight: bold; font-size: 1.1em;">Valore Totale Portafoglio</span>
-                            <span style="color: #222; font-weight: bold; font-size: 1.1em;">${valore_totale_portafoglio:,.2f}</span>
-                        </div>
+                        <div style="color: #444; font-size: 0.95em; white-space: pre-wrap;">{testo}</div>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
+    
+    # Scritta dell'ultimo aggiornamento in fondo a tutto
+    st.markdown(
+        f"<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 30px;'>"
+        f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
-            else:
-                # Sezione Log ed Eventi scritti dal Bot
-                st.subheader("📜 Feed Attività e Log del Bot")
-                if not messaggi_bot:
-                    st.info("Nessun evento registrato. Il bot scriverà qui i segnali, i take profit e i resoconti.")
-                else:
-                    for ev in reversed(messaggi_bot):
-                        timestamp = ev.get('timestamp', '')
-                        titolo = ev.get('titolo', 'Evento')
-                        testo = ev.get('testo', '')
-                        tipo = ev.get('tipo', 'info')
-                        
-                        colore_bordo = "#0066cc"
-                        if tipo == "success":
-                            colore_bordo = "#28a745"
-                        elif tipo == "warning":
-                            colore_bordo = "#ffc107"
-                        elif tipo == "error":
-                            colore_bordo = "#dc3545"
-
-                        st.markdown(
-                            f"""
-                            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 5px solid {colore_bordo}; border: 1px solid #e0e0e0;">
-                                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                    <strong style="color: #222; font-size: 1.05em;">{titolo}</strong>
-                                    <span style="font-size: 0.8em; color: gray;">{timestamp}</span>
-                                </div>
-                                <div style="color: #444; font-size: 0.95em; white-space: pre-wrap;">{testo}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-            
-            # Scritta dell'ultimo aggiornamento in fondo a tutto
-            st.markdown(
-                f"<div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 30px;'>"
-                f"Ultimo aggiornamento live: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-        
-        time.sleep(1)
-
-esegui_aggiornamento_live()
+# Chiamata alla funzione decorata come frammento
+renderizza_dashboard_live()
