@@ -11,6 +11,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 # ==================== CONFIGURAZIONE ====================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -237,28 +239,7 @@ class ExecutionEngine:
             print(f"Errore grafico: {e}")
             return None
 
-# ==================== WEB SERVER PER RENDER ====================
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-        self.wfile.write(b"<html><body><h1>Bot is active and running 24/7!</h1></body></html>")
-    
-    def do_HEAD(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        return
-
-def avvia_server_web():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
-    server.serve_forever()
-
-# ==================== MAIN PIPELINE ====================
+# ==================== 5. LOGICA DEL BOT (BACKGROUND) ====================
 def esegui_ciclo():
     portafoglio = ExecutionEngine.carica_portafoglio()
     df = DataEngine.ottieni_dati()
@@ -293,7 +274,6 @@ def esegui_ciclo():
         ExecutionEngine.invia_telegram(msg_giorno)
         portafoglio["valore_iniziale_giornata"] = val_portafoglio
         portafoglio["data_ultima_registrazione"] = oggi_italia_str
-        # Lo storico delle operazioni non viene più azzerato, accumulandosi nel tempo
         ExecutionEngine.salva_portafoglio(portafoglio)
 
     q_tot = sum(l['quantita'] for l in lotti)
@@ -387,7 +367,10 @@ def esegui_ciclo():
             if saldo >= costo_tot:
                 quantita = capitale_lotto / prezzo
                 portafoglio["saldo_usd"] = saldo - costo_tot
-                nuovo_id = len(portafoglio["lotti"]) + 1
+                
+                # Assegna un ID progressivo sicuro basato sui lotti esistenti
+                esistenti = [l['id'] for l in portafoglio["lotti"]]
+                nuovo_id = max(esistenti) + 1 if esistenti else 1
                 
                 portafoglio["lotti"].append({
                     "id": nuovo_id, 
@@ -409,13 +392,10 @@ def esegui_ciclo():
 
     # REPORT PERIODICO (OGNI 5 MINUTI)
     ultimo_rep = portafoglio.get("ultimo_report_time", 0.0)
-    if ultimo_rep is None:
-        ultimo_rep = 0.0
+    if ultimo_rep is None: ultimo_rep = 0.0
         
-    tempo_trascorso = ts - ultimo_rep
-    if tempo_trascorso >= 300:
+    if (ts - ultimo_rep) >= 300:
         dett_pos = f"• Posizioni attive: {lotti_attivi}/{MAX_LOTTI}\n• Prezzo medio: ${prezzo_medio:,.2f}\n• Rendimento (P&L): {pnl_perc:+.2f}%\n" if lotti_attivi > 0 else "• Nessun lotto attivo.\n"
-
         messaggio_report = (
             f"📈 *REPORT SMART DI MERCATO* 📈\n\n"
             f"• Bitcoin: ${prezzo:,.2f}\n"
@@ -429,15 +409,72 @@ def esegui_ciclo():
         chart = ExecutionEngine.genera_grafico(df, rsi, prezzo, stato_dash, regime)
         ExecutionEngine.invia_telegram(messaggio_report, chart)
 
-if __name__ == "__main__":
-    print("Avvio del server web per Render...")
-    server_thread = threading.Thread(target=avvia_server_web, daemon=True)
-    server_thread.start()
+def avvia_bot_in_background():
+    def loop_bot():
+        while True:
+            try:
+                esegui_ciclo()
+            except Exception as e:
+                print(f"Errore nel ciclo bot: {e}")
+            time.sleep(30)
+    
+    t = threading.Thread(target=loop_bot, daemon=True)
+    t.start()
 
-    print("Bot avviato in modalità cloud 24/7...")
-    while True:
-        try:
-            esegui_ciclo()
-        except Exception as e:
-            print(f"Errore nel ciclo: {e}")
-        time.sleep(30)
+# ==================== 6. INTERFACCIA STREAMLIT ====================
+def esegui_streamlit():
+    st_autorefresh(interval=10000, limit=None, key="datarefresh")
+    
+    st.set_page_config(page_title="BTC Bot Dashboard", page_icon="📈", layout="centered")
+    
+    portafoglio = ExecutionEngine.carica_portafoglio()
+    df = DataEngine.ottieni_dati()
+    prezzo_attuale = df['Close'].iloc[-1] if df is not None and len(df) > 0 else 0.0
+
+    st.markdown(f"### ₿ Prezzo Bitcoin: **${prezzo_attuale:,.2f}**")
+    st.markdown("---")
+
+    st.subheader("Posizioni Attive")
+    lotti = portafoglio.get("lotti", [])
+    
+    if not lotti:
+        st.info("Nessun lotto attivo al momento.")
+    else:
+        for lotto in lotti:
+            p_entrata = lotto['prezzo_entrata']
+            q = lotto['quantita']
+            pnl_lotto = (prezzo_attuale - p_entrata) * q
+            pnl_lotto_pct = ((prezzo_attuale - p_entrata) / p_entrata) * 100
+            colore_pnl = "green" if pnl_lotto >= 0 else "red"
+            
+            st.markdown(
+                f"""
+                **BTCUSD, BUY** `{q:.4f}`  
+                Entrata: `{p_entrata:,.2f}` | Attuale: `{prezzo_attuale:,.2f}`  
+                <div style="text-align: right; color: {colore_pnl}; font-size: 20px; font-weight: bold;">
+                ${pnl_lotto:+,.2f} <span style="font-size: 14px;">({pnl_lotto_pct:+.2f}%)</span>
+                </div>
+                <div style="text-align: right; font-size: 12px; color: gray;">ID: {lotto['id']}</div>
+                <hr style="margin: 5px 0;">
+                """,
+                unsafe_allow_html=True
+            )
+
+    st.markdown("---")
+    st.subheader("Riepilogo")
+    
+    valore_posizioni = sum(l['quantita'] * prezzo_attuale for l in lotti)
+    valore_totale = portafoglio["saldo_usd"] + valore_posizioni
+    val_iniziale = portafoglio.get("valore_iniziale_giornata", CAPITALE_INIZIALE)
+    profilo_chiuse = sum(portafoglio.get("storico_operazioni", []))
+
+    st.metric("Valore Iniziale Giornata", f"${val_iniziale:,.2f}")
+    st.metric("Valore Totale Portafoglio", f"${valore_totale:,.2f}")
+    st.metric("Profitto Operazioni Chiuso (Storico)", f"${profilo_chiuse:+,.2f}")
+
+# ==================== AVVIATORE UNICO PER RENDER ====================
+if __name__ == "__main__":
+    # Avvia il bot di trading in un thread separato in background
+    avvia_bot_in_background()
+    # Esegue Streamlit come interfaccia principale dell'app
+    esegui_streamlit()
