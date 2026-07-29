@@ -22,7 +22,7 @@ PORTFOLIO_FILE = "portfolio.json"
 CAPITALE_INIZIALE = 10000.0  
 CAPITALE_PER_LOTTO = 600.0   
 MAX_LOTTI = 15                     
-FEE_PERCENTUALE = 0.001        
+FEE_PERCENTUALE = 0.001       
 MAX_DAILY_DRAWDOWN_PCT = 4.0  
 
 # ==================== 1. DATA ENGINE ====================
@@ -288,12 +288,12 @@ def esegui_ciclo():
             f"📅 *RESOCONTO GIORNALIERO SMART* 📅\n\n"
             f"Portafoglio totale a ${val_portafoglio:,.2f}, "
             f"siamo a ${diff:+,.2f} ({diff_p:+.2f}%).\n"
-            f"Win rate del {win_rate:.1f}%."
+            f"Win rate complessivo del {win_rate:.1f}%."
         )
         ExecutionEngine.invia_telegram(msg_giorno)
         portafoglio["valore_iniziale_giornata"] = val_portafoglio
         portafoglio["data_ultima_registrazione"] = oggi_italia_str
-        portafoglio["storico_operazioni"] = []
+        # Lo storico delle operazioni non viene più azzerato, accumulandosi nel tempo
         ExecutionEngine.salva_portafoglio(portafoglio)
 
     q_tot = sum(l['quantita'] for l in lotti)
@@ -390,7 +390,7 @@ def esegui_ciclo():
                 nuovo_id = len(portafoglio["lotti"]) + 1
                 
                 portafoglio["lotti"].append({
-                    "id": nuevo_id if 'nuevo_id' in locals() else nuovo_id, 
+                    "id": nuovo_id, 
                     "prezzo_entrata": prezzo, 
                     "quantita": quantita, 
                     "spesa": costo_tot
