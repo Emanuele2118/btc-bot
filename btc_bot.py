@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import time
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -140,7 +139,7 @@ class ExecutionEngine:
                 with open(PORTFOLIO_FILE, 'r') as f:
                     data = json.load(f)
             except Exception as e:
-                print(f"Errore lettura file: {e}")
+                print(f"Errore lettura file locale: {e}")
 
         oggi_italia_str = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
         if isinstance(data, dict):
@@ -164,9 +163,10 @@ class ExecutionEngine:
     @staticmethod
     def salva_portafoglio(portafoglio):
         try:
-            with open(PORTFOLIO_FILE, 'w') as f: json.dump(portafoglio, f, indent=4)
+            with open(PORTFOLIO_FILE, 'w') as f: 
+                json.dump(portafoglio, f, indent=4)
         except Exception as e:
-            print(f"Errore salvataggio: {e}")
+            print(f"Errore salvataggio file locale: {e}")
 
     @staticmethod
     def invia_a_google_sheets(tipo_operazione, prezzo, quantita, profitto, saldo):
@@ -368,7 +368,6 @@ def esegui_ciclo():
                 quantita = capitale_lotto / prezzo
                 portafoglio["saldo_usd"] = saldo - costo_tot
                 
-                # Assegna un ID progressivo sicuro basato sui lotti esistenti
                 esistenti = [l['id'] for l in portafoglio["lotti"]]
                 nuovo_id = max(esistenti) + 1 if esistenti else 1
                 
@@ -474,7 +473,5 @@ def esegui_streamlit():
 
 # ==================== AVVIATORE UNICO PER RENDER ====================
 if __name__ == "__main__":
-    # Avvia il bot di trading in un thread separato in background
     avvia_bot_in_background()
-    # Esegue Streamlit come interfaccia principale dell'app
     esegui_streamlit()
